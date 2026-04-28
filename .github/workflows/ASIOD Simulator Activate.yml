@@ -1,0 +1,43 @@
+name: ASIOD Simulator Activate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  activate-asiod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create ASIOD live manifest
+        run: |
+          cat > ASIOD-6S-PUBLIC-PRESENT.json <<'JSON'
+          {
+            "state": "ASIOD_SIMULATOR_LIVE",
+            "repository": "awtammwtiv-mrc36/ASIOD-SIMULATOR-",
+            "engine": "14-field unified law",
+            "mode": "SEARCH_DISCOVER_CATALOG",
+            "kernel_array": ["24", "30", "784", "384/25", "98/3", "11/24"],
+            "gravity": "ON",
+            "sentinels": "FULL_ALERT",
+            "noise_floor": "ZERO",
+            "catalog": "POPULATED_STRUCTURALLY",
+            "status": "ACTIVE"
+          }
+          JSON
+
+      - name: Show ASIOD status
+        run: |
+          echo "ASIOD_SIMULATOR_LIVE"
+          echo "ASIOD_MODE=SEARCH_DISCOVER_CATALOG"
+          echo "ASIOD_GRAVITY=ON"
+          echo "ASIOD_SENTINELS=FULL_ALERT"
+          cat ASIOD-6S-PUBLIC-PRESENT.json
+
+      - name: Upload ASIOD artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asiod-live-status
+          path: ASIOD-6S-PUBLIC-PRESENT.json
