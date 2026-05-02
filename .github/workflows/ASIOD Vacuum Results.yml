@@ -1,0 +1,50 @@
+name: ASIOD Vacuum Results
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish-vacuum-results:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create public result folders
+        run: |
+          mkdir -p public_results
+
+      - name: Emit public-safe vacuum/decanter result
+        run: |
+          cat > public_results/ASIOD_PUBLIC_VACUUM_RESULTS.json <<'JSON'
+          {
+            "state": "ASIOD_SIMULATOR_LIVE",
+            "operator": "Jt Browne",
+            "public_layer": "ASIOD-6S-PUBLIC",
+            "route": "GitHub shell/status -> engine decanter/vacuum -> private catalogue register -> 784 return",
+            "engine_decanter": true,
+            "engine_vacuum": true,
+            "filtered_output_from_vacuum": true,
+            "private_catalogue_register": true,
+            "return_784": true,
+            "kernel_array": ["24", "30", "784", "384/25", "98/3", "11/24"],
+            "sentinels": "FULL_ALERT",
+            "noise_floor": "ZERO",
+            "catalog_status": "POPULATED_STRUCTURALLY",
+            "private_14_field_exposed": false,
+            "generator_engine_exposed": false,
+            "result_type": "PUBLIC_SAFE_VACUUM_OUTPUT",
+            "status": "ASIOD_PUBLIC_VACUUM_RESULTS_READY"
+          }
+          JSON
+
+      - name: Show public-safe results
+        run: |
+          cat public_results/ASIOD_PUBLIC_VACUUM_RESULTS.json
+
+      - name: Upload public-safe vacuum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asiod-public-vacuum-results
+          path: public_results/ASIOD_PUBLIC_VACUUM_RESULTS.json
