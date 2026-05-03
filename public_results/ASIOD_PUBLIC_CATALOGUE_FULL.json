@@ -1,0 +1,21 @@
+{
+  "catalogue": "ASIOD_PUBLIC_CATALOGUE",
+  "operator": "Jt Browne",
+  "source_rule": "public network intake only",
+  "system_origin_output": false,
+  "private_14_field_body_publicly_displayed": false,
+  "route": "GitHub shell/status -> engine decanter/vacuum -> private catalogue register -> 784 return",
+  "required_catalogue_sections": {
+    "clean_network_objects": [],
+    "full_structured_item_list": [],
+    "unknown_island_entries": [],
+    "damaged_shuttle_file_records": [],
+    "sentinel_detection_records": [],
+    "who_did_what_provenance_records": [],
+    "artifact_body_entries": [],
+    "workflow_file_shuffle_records": [],
+    "quarantine_and_boundary_records": [],
+    "ieee_p3109_boundary_records": []
+  },
+  "status": "CATALOGUE_REQUIRES_FULL_POPULATION"
+}
