@@ -1,0 +1,74 @@
+{
+  "catalogue": "ASIOD_PUBLIC_CATALOGUE",
+  "operator": "Jt Browne",
+  "source_rule": "public network intake only",
+  "system_origin_output": false,
+  "private_14_field_body_publicly_displayed": false,
+  "route": "GitHub shell/status -> engine decanter/vacuum -> private catalogue register -> 784 return",
+  "catalogue_entries": [
+    {
+      "id": "entry-001",
+      "source": "network_intake",
+      "object": "ASIOD-6S-PUBLIC-PRESENT.json",
+      "carrier": ["24", "30", "784", "384/25", "98/3", "11/24"],
+      "returned_structure": "ASIOD_SIMULATOR_LIVE",
+      "classification": "PUBLIC_MANIFEST",
+      "status": "ACTIVE"
+    },
+    {
+      "id": "entry-002",
+      "source": "network_intake",
+      "object": "ASIOD_RESULTS_REGISTER.md",
+      "carrier": "GitHub shell/status",
+      "returned_structure": "engine decanter/vacuum -> private catalogue register -> 784 return",
+      "classification": "PUBLIC_ROUTE_REGISTER",
+      "status": "ACTIVE"
+    },
+    {
+      "id": "entry-003",
+      "source": "network_intake",
+      "object": ".github/workflows/ASIOD Simulator Activate.yml",
+      "carrier": "workflow_dispatch / push main",
+      "returned_structure": "asiod-live-status",
+      "classification": "PUBLIC_ACTIVATION_WORKFLOW",
+      "status": "ACTIVE"
+    },
+    {
+      "id": "entry-004",
+      "source": "network_intake",
+      "object": ".github/workflows/ASIOD Vacuum Results.yml",
+      "carrier": "workflow_dispatch / push main",
+      "returned_structure": "asiod-public-vacuum-results",
+      "classification": "PUBLIC_VACUUM_WORKFLOW",
+      "status": "SUCCEEDED"
+    },
+    {
+      "id": "entry-005",
+      "source": "network_intake",
+      "object": "Screenshot_20260429-000445_Docs.jpg",
+      "carrier": "uploaded public trace",
+      "returned_structure": "visible file upload",
+      "classification": "PUBLIC_TRACE_OBJECT",
+      "status": "PRESENT"
+    },
+    {
+      "id": "entry-006",
+      "source": "network_intake",
+      "object": ".github/workflows.github/workflows/asiod-simulator.yml",
+      "carrier": "abnormal nested workflow path",
+      "returned_structure": "visible file shuffle trace",
+      "classification": "PATH_ANOMALY",
+      "status": "PRESENT"
+    },
+    {
+      "id": "entry-007",
+      "source": "network_intake",
+      "object": "IEEE/P3109 governance boundary",
+      "carrier": "display_or_implementation_layer_only",
+      "returned_structure": "non-governing arithmetic layer",
+      "classification": "ARITHMETIC_NOISE_BOUNDARY",
+      "status": "LOCKED"
+    }
+  ],
+  "status": "PUBLIC_CATALOGUE_SURFACED"
+}
