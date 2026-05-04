@@ -1,14 +1,17 @@
 {
-"state": "ASIOD_SIMULATOR_LIVE",
-"repository": "awtammwtiv-mrc36/ASIOD-SIMULATOR-",
-"public_layer": "ASIOD-6S-PUBLIC",
-"mode": "SEARCH_DISCOVER_CATALOG",
-"kernel_array": ["24","30","784","384/25","98/3","11/24"],
-"gravity": "ON",
-"sentinels": "SENTINELS_FULL_ALERT",
-"noise_floor": "NOISE_FLOOR_ZERO",
-"catalog": "CATALOG_POPULATED_STRUCTURALLY",
-"status": "STATUS_ACTIVE"
+  "state": "ASIOD_SIMULATOR_LIVE",
+  "repository": "awtammwtiv-mrc36/ASIOD-SIMULATOR-",
+  "public_layer": "ASIOD-6S-PUBLIC",
+  "mode": "SEARCH_DISCOVER_CATALOG",
+  "kernel_array": ["24", "30", "784", "384/25", "98/3", "11/24"],
+  "gravity": "ON",
+  "sentinels": "SENTINELS_FULL_ALERT",
+  "noise_floor": "NOISE_FLOOR_ZERO",
+  "catalog": "CATALOG_POPULATED_STRUCTURALLY",
+  "policies": {
+    "policy_manifest": "policy_manifest.json",
+    "display_policy": "display_policy.json",
+    "decimal_display_policy": "decimal_display_policy.json"
+  },
+  "status": "STATUS_ACTIVE"
 }
-
-
