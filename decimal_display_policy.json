@@ -1,0 +1,17 @@
+{
+  "decimal_display_policy": {
+    "decimal_role": "human_display_only",
+    "decimal_places_max": 4,
+    "decimal_governs_proof": false,
+    "decimal_first_authority": false,
+    "exact_authority_required": true,
+    "proof_authority": [
+      "source_law",
+      "carrier",
+      "returned_structure",
+      "derived_law",
+      "exact_classification"
+    ],
+    "status": "DECIMAL_DISPLAY_LIMIT_LOCKED"
+  }
+}
