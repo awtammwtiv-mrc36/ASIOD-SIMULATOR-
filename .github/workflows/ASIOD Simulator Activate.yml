@@ -30,7 +30,7 @@ jobs:
     "display_policy": "display_policy.json",
     "decimal_display_policy": "decimal_display_policy.json
     "status": "STATUS_ACTIVE",
-  },
+  }
   JSON
 
       - name: Show ASIOD status
