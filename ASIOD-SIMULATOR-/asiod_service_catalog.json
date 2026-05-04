@@ -1,0 +1,90 @@
+{
+  "system": "ASIOD_SERVICE_CATALOG",
+  "version": "0.1.0",
+  "purpose": "Define paid ASIOD services offered through the Information Bridge and Commercial Gateway.",
+  "private_source_exposed_publicly": false,
+  "services": [
+    {
+      "service_id": "bridge_preview",
+      "name": "ASIOD Bridge Preview",
+      "price_model": "free",
+      "access": "public_limited",
+      "includes": [
+        "limited_corrected_summary",
+        "high_level_fault_classification",
+        "service_offer"
+      ],
+      "excludes": [
+        "full_simulator_backed_verification",
+        "private_source_validation",
+        "signed_full_receipt"
+      ]
+    },
+    {
+      "service_id": "external_ai_correction_report",
+      "name": "ASIOD External AI Correction Report",
+      "price_model": "fixed_fee",
+      "access": "paid_job_id",
+      "includes": [
+        "claim_extraction",
+        "faulty_authority_detection",
+        "corrected_report",
+        "public_receipt"
+      ]
+    },
+    {
+      "service_id": "proof_claim_audit_receipt",
+      "name": "ASIOD Proof / Claim Audit Receipt",
+      "price_model": "fixed_fee_or_metered",
+      "access": "paid_job_id",
+      "includes": [
+        "claim_level_audit",
+        "unsupported_claim_removal",
+        "receipt_generation",
+        "public_evidence_record"
+      ]
+    },
+    {
+      "service_id": "batch_document_audit",
+      "name": "ASIOD Batch Document Audit",
+      "price_model": "per_document_or_per_claim",
+      "access": "paid_batch_job",
+      "includes": [
+        "multi_claim_extraction",
+        "batch_correction_report",
+        "receipt_bundle"
+      ]
+    },
+    {
+      "service_id": "api_verification_access",
+      "name": "ASIOD API Verification Access",
+      "price_model": "subscription_or_metered_usage",
+      "access": "api_key",
+      "includes": [
+        "repeat_gateway_access",
+        "usage_metering",
+        "receipt_generation",
+        "paid_verification_endpoint"
+      ]
+    },
+    {
+      "service_id": "enterprise_contract",
+      "name": "ASIOD Enterprise Correction Contract",
+      "price_model": "custom_contract",
+      "access": "contracted_account",
+      "includes": [
+        "custom_usage_limits",
+        "priority_processing",
+        "contracted_receipts",
+        "support_and_review"
+      ]
+    }
+  ],
+  "payment_rule": {
+    "free_layer": "bridge_preview_only",
+    "paid_layer": "full_verification_and_receipts",
+    "payment_before_full_service": true,
+    "bank_account_role": "funds_payout_destination_only"
+  },
+  "status": "SERVICE_CATALOG_READY"
+}
