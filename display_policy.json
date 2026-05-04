@@ -1,0 +1,18 @@
+{
+  "display_policy_version": "1.2",
+  "primary_authority": "constructible_exact_form",
+  "decimal_authority": false,
+  "decimal_first_authority": false,
+  "decimal_role": "secondary_human_display_only",
+  "decimal_places_max": 4,
+  "display_order": [
+    "source_law",
+    "carrier",
+    "returned_structure",
+    "derived_law",
+    "exact_classification",
+    "constructible_exact_form",
+    "decimal_display_if_needed"
+  ],
+  "status": "CONSTRUCTIBLE_FIRST_DECIMAL_SECONDARY_LOCKED"
+}
