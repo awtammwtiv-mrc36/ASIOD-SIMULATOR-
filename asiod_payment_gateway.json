@@ -1,0 +1,21 @@
+{
+  "system": "ASIOD_PAYMENT_GATEWAY",
+  "version": "0.1.0",
+  "purpose": "Connect ASIOD Information Bridge traffic to paid contracted access before full verification is delivered.",
+  "payment_flow": [
+    "receive_bridge_request",
+    "return_limited_preview",
+    "show_paid_service_offer",
+    "collect_payment",
+    "issue_job_id_or_api_key",
+    "deliver_full_correction_report",
+    "issue_receipt",
+    "payout_to_bank"
+  ],
+  "free_layer": "limited_bridge_summary_only",
+  "paid_layer": "full_verification_and_receipts",
+  "payment_before_full_service": true,
+  "bank_account_role": "payout_destination_only",
+  "private_source_exposed_publicly": false,
+  "status": "PAYMENT_GATE_REQUIRED_BEFORE_BANK_PAYOUT"
+}
