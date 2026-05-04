@@ -1,0 +1,63 @@
+name: Enforce Public-Layer AI Noise & Policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  enforce-policy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate policy files exist
+        run: |
+          test -f policy_manifest.json || { echo "MISSING policy_manifest.json"; exit 2; }
+          test -f display_policy.json || { echo "MISSING display_policy.json"; exit 3; }
+          test -f decimal_display_policy.json || { echo "MISSING decimal_display_policy.json"; exit 4; }
+
+      - name: Enforce numeric formats non-governing
+        run: |
+          jq -e '
+            .numeric_formats_policy.ieee_754_governs_proof == false and
+            .numeric_formats_policy.ieee_p3109_governs_proof == false and
+            .numeric_formats_policy.posit_governs_proof == false and
+            .numeric_formats_policy.bfloat16_governs_proof == false and
+            .numeric_formats_policy.ofp8_governs_proof == false and
+            .numeric_formats_policy.fixed_point_governs_proof == false and
+            .numeric_formats_policy.decimal_governs_proof == false and
+            .numeric_formats_policy.decimal_display_policy.decimal_places_max <= 4
+          ' policy_manifest.json >/dev/null || {
+            echo "NUMERIC_FORMATS_POLICY_VIOLATION"
+            jq . policy_manifest.json
+            exit 5
+          }
+
+      - name: Enforce constructible-first display policy
+        run: |
+          jq -e '
+            .primary_authority == "constructible_exact_form" and
+            .decimal_authority == false and
+            .decimal_first_authority == false and
+            .decimal_role == "secondary_human_display_only" and
+            .decimal_places_max <= 4 and
+            (.display_order | index("constructible_exact_form")) < (.display_order | index("decimal_display_if_needed"))
+          ' display_policy.json >/dev/null || {
+            echo "DISPLAY_POLICY_VIOLATION"
+            jq . display_policy.json
+            exit 6
+          }
+
+      - name: Block numeric-format proof authority claims
+        run: |
+          matches=$(grep -RInE '"[a-zA-Z0-9_]+_governs_proof"\s*:\s*true' --exclude-dir=.git --exclude=public_audit.log . || true)
+          if [ -n "$matches" ]; then
+            echo "ARTIFACT_ASSERTS_NUMERIC_FORMAT_AS_PROOF"
+            echo "$matches"
+            exit 7
+          fi
+
+      - name: Success
+        run: echo "CI enforcement checks passed"
