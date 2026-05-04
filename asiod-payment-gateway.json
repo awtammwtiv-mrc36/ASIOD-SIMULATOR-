@@ -1,0 +1,14 @@
+{
+  "bank_account_only": "funds_payout_destination_only",
+  "required_payment_chain": [
+    "intake",
+    "contract_or_terms",
+    "payment_processor",
+    "paid_access_or_job_id",
+    "delivery",
+    "receipt",
+    "bank_payout"
+  ],
+  "automation_possible": true,
+  "status": "PAYMENT_CHAIN_RULE_CONFIRMED"
+}
