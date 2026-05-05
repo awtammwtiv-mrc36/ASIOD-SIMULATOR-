@@ -149,6 +149,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
 
 app.get('/.well-known/agent-card.json', (_req, res) => {
   res.json({
+    protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
     description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, and authorised shattered-file recovery intake.',
     url: APP_BASE_URL,
