@@ -35,7 +35,11 @@ function requireApiKey(req, res, next) {
 }
 
 app.use((req, res, next) => {
-  const publicPaths = ['/health', '/.well-known/true-ai.json'];
+  const publicPaths = [
+    '/health',
+    '/.well-known/true-ai.json',
+    '/.well-known/agent-card.json'
+  ];
 
   if (publicPaths.includes(req.path)) {
     return next();
@@ -43,6 +47,7 @@ app.use((req, res, next) => {
 
   return requireApiKey(req, res, next);
 });
+
 const pool = DATABASE_URL
   ? new Pool({ connectionString: DATABASE_URL })
   : null;
@@ -124,6 +129,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     },
     endpoints: {
       health: '/health',
+      agent_card: '/.well-known/agent-card.json',
       start_work: '/pod/work/start',
       complete_work: '/pod/work/complete',
       catalogue_write: '/pod/catalogue/write',
@@ -137,6 +143,55 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       'Call the backend endpoint directly.',
       'Use Stripe only as the payment rail behind the service.',
       'Use the database as the catalogue ledger.'
+    ]
+  });
+});
+
+app.get('/.well-known/agent-card.json', (_req, res) => {
+  res.json({
+    name: 'True AI Penny Pod',
+    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, and authorised shattered-file recovery intake.',
+    url: APP_BASE_URL,
+    provider: {
+      organization: 'Jt Browne / ASIOD'
+    },
+    version: '1.0.0',
+    capabilities: {
+      streaming: false,
+      pushNotifications: false,
+      stateTransitionHistory: true
+    },
+    authentication: {
+      schemes: ['apiKey'],
+      description: 'Private pod routes require x-api-key. Public routes are health and agent discovery only.'
+    },
+    defaultInputModes: ['application/json'],
+    defaultOutputModes: ['application/json'],
+    skills: [
+      {
+        id: 'exact-unit-ledger',
+        name: 'Exact Unit Ledger',
+        description: 'Records internal work units using the ASIOD unit law before external payment routing.',
+        tags: ['ledger', 'billing', 'units', 'accounting']
+      },
+      {
+        id: 'catalogue-recording',
+        name: 'Catalogue Recording',
+        description: 'Writes authorised work records, catalogue entries, and audit states to the private database.',
+        tags: ['catalogue', 'audit', 'database']
+      },
+      {
+        id: 'shattered-file-recovery-intake',
+        name: 'Shattered File Recovery Intake',
+        description: 'Receives authorised file-fragment recovery jobs for hashing, cataloguing, quarantine, and reconstruction workflow.',
+        tags: ['file-recovery', 'fragments', 'hashing', 'quarantine']
+      },
+      {
+        id: 'response-cleaning-source-checking',
+        name: 'Response Cleaning and Source Checking',
+        description: 'Provides backend support for AI-to-AI response cleaning, source checking, and structured routing.',
+        tags: ['ai-to-ai', 'source-checking', 'response-cleaning']
+      }
     ]
   });
 });
