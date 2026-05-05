@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: True AI Penny Pod
+  version: 1.0.0
+  description: Background AI-to-AI billing and work-gating API.
+servers:
+  - url: https://YOUR_DOMAIN
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Pod is running
+  /pod/work/start:
+    post:
+      summary: Start AI work through the background gate
+      responses:
+        "200":
+          description: Work allowed
+  /pod/work/complete:
+    post:
+      summary: Complete AI work and record internal units
+      responses:
+        "200":
+          description: Units recorded
+  /pod/setup-customer:
+    post:
+      summary: One-time customer payment authority setup
+      responses:
+        "501":
+          description: Stripe setup layer not attached yet
+  /stripe/webhook:
+    post:
+      summary: Stripe webhook receiver
+      responses:
+        "200":
+          description: Webhook received
