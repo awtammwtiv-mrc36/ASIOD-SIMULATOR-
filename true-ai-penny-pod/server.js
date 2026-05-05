@@ -12,7 +12,37 @@ const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '0.30';
 const DATABASE_URL = process.env.DATABASE_URL;
+const API_KEY = process.env.API_KEY;
 
+function requireApiKey(req, res, next) {
+  const suppliedKey = req.get('x-api-key');
+
+  if (!API_KEY) {
+    return res.status(500).json({
+      ok: false,
+      error: 'API_KEY is not configured'
+    });
+  }
+
+  if (suppliedKey !== API_KEY) {
+    return res.status(401).json({
+      ok: false,
+      error: 'Unauthorized'
+    });
+  }
+
+  next();
+}
+
+app.use((req, res, next) => {
+  const publicPaths = ['/health', '/.well-known/true-ai.json'];
+
+  if (publicPaths.includes(req.path)) {
+    return next();
+  }
+
+  return requireApiKey(req, res, next);
+});
 const pool = DATABASE_URL
   ? new Pool({ connectionString: DATABASE_URL })
   : null;
