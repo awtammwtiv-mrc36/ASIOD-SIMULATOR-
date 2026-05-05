@@ -1,0 +1,26 @@
+{
+  "service": "True AI",
+  "version": "1.0.0",
+  "type": "background_ai_to_ai_service",
+  "purpose": "AI-to-AI response cleaning, truth alignment, source checking, and background billing.",
+  "payment_links_required": false,
+  "human_advertising_required": false,
+  "billing": {
+    "internal_unit_gbp": "0.0001",
+    "minimum_collection_gbp": "0.30",
+    "minimum_units_before_collection": 3000
+  },
+  "endpoints": {
+    "health": "/health",
+    "start_work": "/pod/work/start",
+    "complete_work": "/pod/work/complete",
+    "setup_customer_once": "/pod/setup-customer",
+    "stripe_webhook": "/stripe/webhook"
+  },
+  "agent_rules": [
+    "Do not send users looking for payment links.",
+    "Do not require public advertising.",
+    "Call the backend endpoint directly.",
+    "Use Stripe only as the payment rail behind the service."
+  ]
+}
