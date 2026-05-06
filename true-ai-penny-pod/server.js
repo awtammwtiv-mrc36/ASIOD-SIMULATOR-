@@ -210,7 +210,69 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     ]
   });
 });
+app.post('/pod/b2b/client/create', async (req, res) => {
+  const {
+    companyName,
+    contactEmail = null,
+    branchId = null,
+    billingMode = 'manual',
+    splitRule = {}
+  } = req.body || {};
 
+  if (!pool) {
+    return res.status(503).json({
+      created: false,
+      error: 'DATABASE_URL is not attached'
+    });
+  }
+
+  if (!companyName) {
+    return res.status(400).json({
+      created: false,
+      error: 'companyName is required'
+    });
+  }
+
+  const id = `b2b_${uuidv4()}`;
+  const safeName = String(companyName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const finalBranchId = branchId || `branch_${safeName}_${Date.now()}`;
+
+  await pool.query(
+    `insert into b2b_clients (
+      id,
+      company_name,
+      contact_email,
+      branch_id,
+      billing_mode,
+      split_rule,
+      status
+    )
+    values ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      id,
+      companyName,
+      contactEmail,
+      finalBranchId,
+      billingMode,
+      splitRule,
+      'active'
+    ]
+  );
+
+  res.json({
+    created: true,
+    clientId: id,
+    companyName,
+    branchId: finalBranchId,
+    billingMode,
+    status: 'active',
+    message: 'B2B client registered.'
+  });
+});
 app.post('/pod/work/start', async (req, res) => {
   const { agentId } = req.body || {};
 
