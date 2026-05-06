@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 const PORT = process.env.PORT || 4242;
-const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '0.30';
