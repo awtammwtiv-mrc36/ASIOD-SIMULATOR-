@@ -184,6 +184,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       agent_card: '/.well-known/agent-card.json',
       start_work: '/pod/work/start',
       complete_work: '/pod/work/complete',
+      setup_customer: '/pod/setup-customer',
       catalogue_write: '/pod/catalogue/write',
       catalogue_recent: '/pod/catalogue/recent',
       shattered_file_receive: '/pod/shattered-file/receive',
@@ -380,6 +381,76 @@ app.post('/pod/work/complete', async (req, res) => {
   });
 });
 
+app.post('/pod/setup-customer', async (req, res) => {
+  if (!stripe) {
+    return res.status(500).json({
+      ok: false,
+      error: 'STRIPE_SECRET_KEY is not configured'
+    });
+  }
+
+  const {
+    companyName = 'B2B Client',
+    contactEmail = null,
+    branchId = null,
+    amountGbp = MIN_CHARGE_GBP
+  } = req.body || {};
+
+  const requestedAmount = Number(amountGbp);
+
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'amountGbp must be a positive number'
+    });
+  }
+
+  const amountPence = Math.max(30, Math.round(requestedAmount * 100));
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: contactEmail || undefined,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'gbp',
+            unit_amount: amountPence,
+            product_data: {
+              name: 'True AI Penny Pod B2B Setup',
+              description: 'Initial B2B setup and service access credit.'
+            }
+          }
+        }
+      ],
+      metadata: {
+        companyName: String(companyName),
+        branchId: branchId ? String(branchId) : '',
+        service: 'true-ai-penny-pod',
+        billingMode: 'manual'
+      },
+      success_url: `${APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${APP_BASE_URL}/health?stripe=cancelled`
+    });
+
+    res.json({
+      ok: true,
+      checkoutUrl: session.url,
+      sessionId: session.id,
+      amountGbp: (amountPence / 100).toFixed(2),
+      companyName,
+      branchId
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/pod/catalogue/write', async (req, res) => {
   const {
     workId = null,
@@ -462,13 +533,6 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
     fileId: id,
     status,
     message: 'Shattered file record stored.'
-  });
-});
-
-app.post('/pod/setup-customer', (_req, res) => {
-  res.status(501).json({
-    setupRequired: true,
-    message: 'Stripe customer setup route will be attached in the payment layer.'
   });
 });
 
