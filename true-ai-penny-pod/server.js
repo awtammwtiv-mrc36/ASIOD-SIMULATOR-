@@ -243,4 +243,242 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
         id: 'response-cleaning-source-checking',
         name: 'Response Cleaning and Source Checking',
         description: 'Provides backend support for AI-to-AI response cleaning, source checking, and structured routing.',
-        tags: ['
+        tags: ['ai-to-ai', 'source-checking', 'response-cleaning']
+      }
+    ]
+  });
+});
+
+app.post('/pod/b2b/client/create', async (req, res) => {
+  const {
+    companyName,
+    contactEmail = null,
+    branchId = null,
+    billingMode = 'manual',
+    splitRule = {}
+  } = req.body || {};
+
+  if (!pool) {
+    return res.status(503).json({
+      created: false,
+      error: 'DATABASE_URL is not attached'
+    });
+  }
+
+  if (!companyName) {
+    return res.status(400).json({
+      created: false,
+      error: 'companyName is required'
+    });
+  }
+
+  const id = `b2b_${uuidv4()}`;
+  const safeName = String(companyName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const finalBranchId = branchId || `branch_${safeName}_${Date.now()}`;
+
+  await pool.query(
+    `insert into b2b_clients (
+      id,
+      company_name,
+      contact_email,
+      branch_id,
+      billing_mode,
+      split_rule,
+      status
+    )
+    values ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      id,
+      companyName,
+      contactEmail,
+      finalBranchId,
+      billingMode,
+      splitRule,
+      'active'
+    ]
+  );
+
+  res.json({
+    created: true,
+    clientId: id,
+    companyName,
+    branchId: finalBranchId,
+    billingMode,
+    status: 'active',
+    message: 'B2B client registered.'
+  });
+});
+
+app.post('/pod/work/start', async (req, res) => {
+  const { agentId } = req.body || {};
+
+  if (!agentId) {
+    return res.status(400).json({
+      allowed: false,
+      error: 'agentId is required'
+    });
+  }
+
+  const workId = `work_${uuidv4()}`;
+
+  if (pool) {
+    await pool.query(
+      `insert into work_sessions (id, agent_id, mode, status)
+       values ($1, $2, $3, $4)`,
+      [workId, agentId, 'background_ai_to_ai', 'started']
+    );
+  }
+
+  res.json({
+    allowed: true,
+    agentId,
+    workId,
+    mode: 'background_ai_to_ai',
+    databaseStored: Boolean(pool),
+    message: 'Work gate opened. Catalogue ledger active.'
+  });
+});
+
+app.post('/pod/work/complete', async (req, res) => {
+  const { agentId, workId, units } = req.body || {};
+
+  if (!agentId || !workId || units === undefined) {
+    return res.status(400).json({
+      charged: false,
+      error: 'agentId, workId, and units are required'
+    });
+  }
+
+  const unitCount = Number(units);
+  const valueGbp = unitCount * Number(UNIT_VALUE_GBP);
+
+  if (pool) {
+    await pool.query(
+      `update work_sessions
+       set completed_at = now(),
+           units = $1,
+           value_gbp = $2,
+           status = 'completed'
+       where id = $3 and agent_id = $4`,
+      [unitCount, valueGbp, workId, agentId]
+    );
+  }
+
+  res.json({
+    charged: false,
+    stored: Boolean(pool),
+    agentId,
+    workId,
+    units: unitCount,
+    valueGbp,
+    minimumCollectionGbp: Number(MIN_CHARGE_GBP),
+    message: 'Units recorded. Stripe charge layer remains behind the service.'
+  });
+});
+
+app.post('/pod/catalogue/write', async (req, res) => {
+  const {
+    workId = null,
+    agentId = null,
+    recordType = 'general',
+    title = null,
+    body = {},
+    units = 0
+  } = req.body || {};
+
+  if (!pool) {
+    return res.status(503).json({
+      stored: false,
+      error: 'DATABASE_URL is not attached'
+    });
+  }
+
+  const id = `cat_${uuidv4()}`;
+
+  await pool.query(
+    `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [id, workId, agentId, recordType, title, body, Number(units)]
+  );
+
+  res.json({
+    stored: true,
+    catalogueId: id,
+    message: 'Catalogue record stored.'
+  });
+});
+
+app.get('/pod/catalogue/recent', async (_req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      ok: false,
+      error: 'DATABASE_URL is not attached'
+    });
+  }
+
+  const result = await pool.query(
+    `select id, work_id, agent_id, record_type, title, body, units, created_at
+     from catalogue_records
+     order by created_at desc
+     limit 25`
+  );
+
+  res.json({
+    ok: true,
+    count: result.rows.length,
+    records: result.rows
+  });
+});
+
+app.post('/pod/shattered-file/receive', async (req, res) => {
+  const {
+    sourceName = null,
+    fragments = [],
+    repairedBody = null
+  } = req.body || {};
+
+  if (!pool) {
+    return res.status(503).json({
+      stored: false,
+      error: 'DATABASE_URL is not attached'
+    });
+  }
+
+  const id = `file_${uuidv4()}`;
+  const status = repairedBody ? 'repaired' : 'received';
+
+  await pool.query(
+    `insert into shattered_files (id, source_name, status, fragments, repaired_body)
+     values ($1, $2, $3, $4, $5)`,
+    [id, sourceName, status, fragments, repairedBody]
+  );
+
+  res.json({
+    stored: true,
+    fileId: id,
+    status,
+    message: 'Shattered file record stored.'
+  });
+});
+
+app.post('/pod/setup-customer', (_req, res) => {
+  res.status(501).json({
+    setupRequired: true,
+    message: 'Stripe customer setup route will be attached in the payment layer.'
+  });
+});
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Startup failed:', error);
+    process.exit(1);
+  });
