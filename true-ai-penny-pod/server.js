@@ -47,19 +47,7 @@ app.use((req, res, next) => {
 
   return requireApiKey(req, res, next);
 });
-await pool.query(`
-    create table if not exists b2b_clients (
-      id text primary key,
-      company_name text not null,
-      contact_email text,
-      branch_id text not null unique,
-      client_api_key_hash text,
-      billing_mode text not null default 'manual',
-      split_rule jsonb not null default '{}'::jsonb,
-      status text not null default 'active',
-      created_at timestamptz not null default now()
-    );
-  `);
+
 const pool = DATABASE_URL
   ? new Pool({ connectionString: DATABASE_URL })
   : null;
@@ -106,6 +94,20 @@ async function initDb() {
       repaired_body jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists b2b_clients (
+      id text primary key,
+      company_name text not null,
+      contact_email text,
+      branch_id text not null unique,
+      client_api_key_hash text,
+      billing_mode text not null default 'manual',
+      split_rule jsonb not null default '{}'::jsonb,
+      status text not null default 'active',
+      created_at timestamptz not null default now()
     );
   `);
 
