@@ -1,0 +1,45 @@
+{
+  "customerShellSerial": "ASIOD-CUSTOMER-DeanWilkes-001",
+  "shellVersion": "1.0.0",
+  "shellType": "customer-registered-revenue-shell",
+  "registeredCustomerPublicId": "ASIOD-CUSTOMER-001",
+  "registeredCustomerLabel": "Dean Wilkes",
+  "registeredOccupierPublicId": "ASIOD-CUSTOMER-OCCUPIER-001",
+  "status": "registered-pending-percentage",
+  "active": true,
+  "shutterable": true,
+  "privateSourceExposed": false,
+  "integerLock784": true,
+  "ieee754Governance": false,
+  "decimalAuthority": false,
+  "decimalDisplay": "diagnostic-only",
+  "routedThrough": {
+    "gatewayShell": "ASIOD-SHELL-002-PUBLIC-6FIELD",
+    "paymentShell": "ASIOD-SHELL-003-PAID-ORDER",
+    "privateBrainShell": "ASIOD-SHELL-014-PRIVATE-SOURCE",
+    "directPublicBrainAccess": false,
+    "brainCommunicatesThroughSimulatorOnly": true,
+    "simulatorFiltersPublicOutput": true,
+    "privateSourceExposed": false
+  },
+  "financialSplit": {
+    "enabled": true,
+    "currency": "gbp",
+    "customerPercentageOut": null,
+    "platformPercentageOut": null,
+    "operatorPercentageOut": null,
+    "payoutAccountPublicId": null,
+    "notes": "Set percentages before live payout routing."
+  },
+  "allowedServices": [
+    "basic-a2a-intake",
+    "single-file-auto-repair",
+    "document-file-repair",
+    "media-file-repair",
+    "shattered-file-triage",
+    "shattered-file-standard-repair",
+    "shattered-file-complex-repair",
+    "shattered-file-priority-repair"
+  ],
+  "registrationReady": true
+}
