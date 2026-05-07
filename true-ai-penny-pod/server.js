@@ -912,8 +912,50 @@ app.post('/api/order/:id/pay', async (req, res) => {
       error: 'Order payment failed'
     });
   }
-});
+})
+app.post('/api/brain/test', async (req, res) => {
+  try {
+    const brainTestId = `brain_test_${uuidv4()}`;
+    const createdAt = new Date().toISOString();
 
+    const result = {
+      ok: true,
+      brainTestId,
+      brainTest: 'route-confirmed',
+      status: 'simulator-gateway-confirmed',
+      sourceShell: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
+      gatewayShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      publicReturnShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      directPublicBrainAccess: false,
+      brainCommunicatesThroughSimulatorOnly: true,
+      simulatorFiltersPublicOutput: true,
+      privateSourceExposed: false,
+      integerLock784: true,
+      ieee754Governance: false,
+      decimalAuthority: false,
+      createdAt,
+      receivedPayload: sanitizePublicPayload(req.body || {})
+    };
+
+    result.catalogueStored = await writeCatalogueRecord({
+      id: brainTestId,
+      agentId: req.body?.agentId || 'brain-test',
+      recordType: 'api_brain_route_test',
+      title: 'Brain route test through six-field simulator gateway',
+      body: result,
+      units: 0
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Brain route test failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Brain route test failed'
+    });
+  }
+});
 app.post('/api/b2b/intake', (req, res) => {
   return handleApiIntake('b2b', req, res);
 });
