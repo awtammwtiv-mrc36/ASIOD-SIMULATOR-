@@ -69,6 +69,24 @@ function buildPublicApiAgentCard() {
       crypto_intake: '/api/crypto/intake',
       receipt: '/api/receipt/:id'
     },
+    skills: [
+      'a2a-intake',
+      'b2b-intake',
+      'crypto-intake',
+      'quote-service',
+      'create-paid-order',
+      'return-receipt'
+    ],
+    commerce: {
+      pricingMode: 'fixed',
+      currency: 'gbp',
+      minimumChargeGbp: MIN_CHARGE_GBP,
+      unitValueGbp: UNIT_VALUE_GBP,
+      minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
+      paymentRail: 'stripe',
+      humanCheckoutRequired: false,
+      privateSourceExposed: false
+    },
     rules: [
       'Free public front door is limited to the two-string shell.',
       'External public operation stays on the six-field shell.',
