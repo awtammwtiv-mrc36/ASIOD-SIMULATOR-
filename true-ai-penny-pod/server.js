@@ -22,17 +22,143 @@ const stripe = STRIPE_SECRET_KEY
   : null;
 
 const localReceipts = new Map();
+const localQuotes = new Map();
+const localOrders = new Map();
+
+const SHELL_REGISTRY = Object.freeze({
+  freeFrontDoor: {
+    shellSerial: 'ASIOD-SHELL-001-FREE-2STR',
+    role: 'free-two-string-front-door',
+    status: 'active',
+    shutterable: true,
+    percentageOut: null,
+    privateSourceExposed: false
+  },
+  externalPublicLayer: {
+    shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+    role: 'public-six-field-external-shell',
+    status: 'active',
+    shutterable: true,
+    percentageOut: null,
+    privateSourceExposed: false
+  },
+  paidOrderLayer: {
+    shellSerial: 'ASIOD-SHELL-003-PAID-ORDER',
+    role: 'paid-order-and-stripe-shell',
+    status: 'active',
+    shutterable: true,
+    percentageOut: null,
+    privateSourceExposed: false
+  },
+  privateSourceLayer: {
+    shellSerial: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
+    role: 'private-background-source-layer',
+    status: 'sealed',
+    shutterable: false,
+    percentageOut: null,
+    privateSourceExposed: false
+  }
+});
 
 const PUBLIC_API_SHELL = Object.freeze({
   freeFrontDoor: 'two-string-einstein-shell',
   externalPublicLayer: 'six-field-shell',
+  paidOrderLayer: 'fixed-price-stripe-shell',
   privateSourceLayer: 'background-only',
   privateSourceExposed: false,
   integerLock784: true,
   ieee754Governance: false,
   decimalAuthority: false,
-  decimalDisplay: 'diagnostic-only'
+  decimalDisplay: 'diagnostic-only',
+  shellSerials: {
+    freeFrontDoor: SHELL_REGISTRY.freeFrontDoor.shellSerial,
+    externalPublicLayer: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    paidOrderLayer: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    privateSourceLayer: SHELL_REGISTRY.privateSourceLayer.shellSerial
+  },
+  shellStatus: {
+    freeFrontDoor: SHELL_REGISTRY.freeFrontDoor.status,
+    externalPublicLayer: SHELL_REGISTRY.externalPublicLayer.status,
+    paidOrderLayer: SHELL_REGISTRY.paidOrderLayer.status,
+    privateSourceLayer: SHELL_REGISTRY.privateSourceLayer.status
+  },
+  shutdownSafe: true
 });
+
+const SERVICE_CATALOGUE = Object.freeze([
+  {
+    serviceId: 'basic-a2a-intake',
+    shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    name: 'Basic A2A Intake',
+    description: 'Minimum paid AI-to-AI intake, receipt creation, and catalogue write.',
+    unitPriceGbp: '3.00',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'single-file-auto-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Single File Auto Repair',
+    description: 'Automated attempt to repair one corrupted file.',
+    unitPriceGbp: '9.99',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'document-file-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Document File Repair',
+    description: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
+    unitPriceGbp: '24.99',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'media-file-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Media File Repair',
+    description: 'Repair attempt for image, video, audio, archive, or heavier media files.',
+    unitPriceGbp: '49.99',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'shattered-file-triage',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Shattered File Triage',
+    description: 'Inspect fragments, classify damage, and return a repair plan.',
+    unitPriceGbp: '79.00',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'shattered-file-standard-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Shattered File Standard Repair',
+    description: 'Standard reconstruction attempt for a damaged multi-part or shattered file set.',
+    unitPriceGbp: '249.00',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'shattered-file-complex-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Shattered File Complex Repair',
+    description: 'Deep repair for complex fragments, archive structures, video structures, or database-like files.',
+    unitPriceGbp: '499.00',
+    currency: 'gbp',
+    active: true
+  },
+  {
+    serviceId: 'shattered-file-priority-repair',
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    name: 'Shattered File Priority Repair',
+    description: 'Priority queue repair for urgent or high-value shattered-file recovery.',
+    unitPriceGbp: '899.00',
+    currency: 'gbp',
+    active: true
+  }
+]);
 
 function toMoneyNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -40,7 +166,30 @@ function toMoneyNumber(value, fallback = 0) {
 }
 
 function toPence(gbpValue) {
-  return Math.round(toMoneyNumber(gbpValue, 0) * 100);
+  const value = String(gbpValue ?? '').trim();
+
+  if (!value) {
+    return 0;
+  }
+
+  const negative = value.startsWith('-');
+  const cleanValue = negative ? value.slice(1) : value;
+  const [poundsRaw = '0', penceRaw = ''] = cleanValue.split('.');
+
+  const pounds = Number.parseInt(poundsRaw || '0', 10);
+  const paddedPence = `${penceRaw}00`.slice(0, 2);
+  const pence = Number.parseInt(paddedPence || '0', 10);
+
+  if (!Number.isFinite(pounds) || !Number.isFinite(pence)) {
+    return 0;
+  }
+
+  const total = (pounds * 100) + pence;
+  return negative ? -total : total;
+}
+
+function penceToGbp(pence) {
+  return (Number(pence) / 100).toFixed(2);
 }
 
 function getMinimumUnitsBeforeCollection() {
@@ -54,6 +203,57 @@ function getMinimumUnitsBeforeCollection() {
   return Math.ceil(minCharge / unitValue);
 }
 
+function getServiceById(serviceId) {
+  return SERVICE_CATALOGUE.find((service) => service.serviceId === serviceId && service.active);
+}
+
+function buildQuote({ serviceId, quantity = 1, requester = null } = {}) {
+  const service = getServiceById(serviceId);
+
+  if (!service) {
+    return {
+      ok: false,
+      error: 'Unknown or inactive serviceId'
+    };
+  }
+
+  const safeQuantity = Math.max(1, Math.min(Number.parseInt(quantity, 10) || 1, 100));
+  const unitPence = toPence(service.unitPriceGbp);
+  const minPence = toPence(MIN_CHARGE_GBP);
+  const subtotalPence = unitPence * safeQuantity;
+  const amountPence = Math.max(subtotalPence, minPence);
+
+  const quoteId = `quote_${uuidv4()}`;
+
+  const quote = {
+    ok: true,
+    quoteId,
+    requester,
+    serviceId: service.serviceId,
+    serviceName: service.name,
+    description: service.description,
+    quantity: safeQuantity,
+    currency: service.currency,
+    unitPriceGbp: service.unitPriceGbp,
+    subtotalGbp: penceToGbp(subtotalPence),
+    minimumChargeGbp: MIN_CHARGE_GBP,
+    minimumApplied: amountPence > subtotalPence,
+    amountPence,
+    amountGbp: penceToGbp(amountPence),
+    pricingMode: 'fixed',
+    paymentRail: 'stripe',
+    shellSerial: service.shellSerial,
+    shellStatus: 'active',
+    privateSourceExposed: false,
+    integerLock784: true,
+    ieee754Governance: false,
+    createdAt: new Date().toISOString()
+  };
+
+  localQuotes.set(quoteId, quote);
+  return quote;
+}
+
 function buildPublicApiAgentCard() {
   return {
     ok: true,
@@ -61,8 +261,25 @@ function buildPublicApiAgentCard() {
     version: '1.0.0',
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
+    shellRegistry: {
+      freeFrontDoor: SHELL_REGISTRY.freeFrontDoor,
+      externalPublicLayer: SHELL_REGISTRY.externalPublicLayer,
+      paidOrderLayer: SHELL_REGISTRY.paidOrderLayer,
+      privateSourceLayer: {
+        shellSerial: SHELL_REGISTRY.privateSourceLayer.shellSerial,
+        role: SHELL_REGISTRY.privateSourceLayer.role,
+        status: SHELL_REGISTRY.privateSourceLayer.status,
+        shutterable: SHELL_REGISTRY.privateSourceLayer.shutterable,
+        privateSourceExposed: false
+      }
+    },
     endpoints: {
       health: '/api/health',
+      services: '/api/services',
+      quote: '/api/quote',
+      order_create: '/api/order/create',
+      order_read: '/api/order/:id',
+      order_pay: '/api/order/:id/pay',
       agent_card: '/api/agent-card',
       b2b_intake: '/api/b2b/intake',
       a2a_intake: '/api/a2a/intake',
@@ -75,7 +292,10 @@ function buildPublicApiAgentCard() {
       'crypto-intake',
       'quote-service',
       'create-paid-order',
-      'return-receipt'
+      'stripe-checkout-session',
+      'return-receipt',
+      'shattered-file-triage',
+      'shattered-file-repair'
     ],
     commerce: {
       pricingMode: 'fixed',
@@ -85,12 +305,18 @@ function buildPublicApiAgentCard() {
       minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
       paymentRail: 'stripe',
       humanCheckoutRequired: false,
-      privateSourceExposed: false
+      privateSourceExposed: false,
+      servicesEndpoint: '/api/services',
+      quoteEndpoint: '/api/quote',
+      orderEndpoint: '/api/order/create',
+      paymentEndpoint: '/api/order/:id/pay'
     },
     rules: [
       'Free public front door is limited to the two-string shell.',
       'External public operation stays on the six-field shell.',
+      'Paid orders use the fixed-price Stripe shell.',
       'Private source layer remains background-only and is not returned by the public API.',
+      'Shells are serial-stamped so any one shell can be shuttered without closing the whole service.',
       '784 is the true integer lock.',
       '754 governance is false.',
       'Decimal display is diagnostic only.'
@@ -111,6 +337,35 @@ const pool = DATABASE_URL
   ? new Pool({ connectionString: DATABASE_URL })
   : null;
 
+async function writeCatalogueRecord({
+  id,
+  workId = null,
+  agentId = null,
+  recordType = 'general',
+  title = null,
+  body = {},
+  units = 0
+}) {
+  if (!pool) {
+    return false;
+  }
+
+  await pool.query(
+    `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (id) do update
+     set work_id = excluded.work_id,
+         agent_id = excluded.agent_id,
+         record_type = excluded.record_type,
+         title = excluded.title,
+         body = excluded.body,
+         units = excluded.units`,
+    [id, workId, agentId, recordType, title, body, Number(units)]
+  );
+
+  return true;
+}
+
 async function createApiReceipt(channel, payload = {}) {
   const receiptId = `receipt_${uuidv4()}`;
   const createdAt = new Date().toISOString();
@@ -122,34 +377,23 @@ async function createApiReceipt(channel, payload = {}) {
     status: 'received',
     createdAt,
     shell: PUBLIC_API_SHELL,
+    shellSerial: payload.shellSerial || SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    shellStatus: payload.shellStatus || 'active',
     catalogueStored: false,
     payload: sanitizePublicPayload(payload)
   };
 
-  if (pool) {
-    await pool.query(
-      `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        receiptId,
-        null,
-        channel,
-        `api_${channel}_intake`,
-        `API intake receipt: ${channel}`,
-        {
-          receiptId,
-          channel,
-          status: receipt.status,
-          createdAt,
-          shell: PUBLIC_API_SHELL,
-          payload: sanitizePublicPayload(payload)
-        },
-        0
-      ]
-    );
-
-    receipt.catalogueStored = true;
-  }
+  receipt.catalogueStored = await writeCatalogueRecord({
+    id: receiptId,
+    agentId: channel,
+    recordType: `api_${channel}_receipt`,
+    title: `API receipt: ${channel}`,
+    body: {
+      receipt,
+      payload: sanitizePublicPayload(payload)
+    },
+    units: Number(payload.units || 0)
+  });
 
   localReceipts.set(receiptId, receipt);
   return receipt;
@@ -192,9 +436,176 @@ async function readApiReceipt(receiptId) {
   };
 }
 
+async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null } = {}) {
+  const orderId = `order_${uuidv4()}`;
+  const receipt = await createApiReceipt('order', {
+    orderId,
+    quoteId: quote.quoteId,
+    serviceId: quote.serviceId,
+    serviceName: quote.serviceName,
+    amountGbp: quote.amountGbp,
+    shellSerial: quote.shellSerial,
+    shellStatus: quote.shellStatus
+  });
+
+  const order = {
+    ok: true,
+    orderId,
+    quoteId: quote.quoteId,
+    receiptId: receipt.receiptId,
+    agentId,
+    customerEmail,
+    reference,
+    status: 'created',
+    serviceId: quote.serviceId,
+    serviceName: quote.serviceName,
+    description: quote.description,
+    quantity: quote.quantity,
+    currency: quote.currency,
+    amountPence: quote.amountPence,
+    amountGbp: quote.amountGbp,
+    pricingMode: 'fixed',
+    paymentRail: 'stripe',
+    shellSerial: quote.shellSerial,
+    shellStatus: quote.shellStatus,
+    privateSourceExposed: false,
+    integerLock784: true,
+    ieee754Governance: false,
+    createdAt: new Date().toISOString(),
+    payment: null
+  };
+
+  localOrders.set(orderId, order);
+
+  await writeCatalogueRecord({
+    id: orderId,
+    agentId: agentId || 'paid-order',
+    recordType: 'api_paid_order',
+    title: `Paid order: ${quote.serviceName}`,
+    body: order,
+    units: 0
+  });
+
+  return order;
+}
+
+async function readOrder(orderId) {
+  if (localOrders.has(orderId)) {
+    return localOrders.get(orderId);
+  }
+
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `select id, body, created_at
+     from catalogue_records
+     where id = $1 and record_type = 'api_paid_order'
+     limit 1`,
+    [orderId]
+  );
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  const order = result.rows[0].body;
+  localOrders.set(orderId, order);
+  return order;
+}
+
+async function createStripeCheckoutForOrder(order) {
+  if (!stripe) {
+    return {
+      ok: false,
+      error: 'STRIPE_SECRET_KEY is not configured'
+    };
+  }
+
+  if (!order || !order.orderId) {
+    return {
+      ok: false,
+      error: 'Valid order is required'
+    };
+  }
+
+  const amountPence = Number(order.amountPence);
+
+  if (!Number.isInteger(amountPence) || amountPence <= 0) {
+    return {
+      ok: false,
+      error: 'Order amount is invalid'
+    };
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: ['card'],
+    customer_email: order.customerEmail || undefined,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'gbp',
+          unit_amount: amountPence,
+          product_data: {
+            name: order.serviceName,
+            description: order.description
+          }
+        }
+      }
+    ],
+    metadata: {
+      orderId: order.orderId,
+      quoteId: order.quoteId,
+      receiptId: order.receiptId,
+      serviceId: order.serviceId,
+      shellSerial: order.shellSerial,
+      service: 'asiod-public-api-shell',
+      pricingMode: 'fixed',
+      privateSourceExposed: 'false',
+      integerLock784: 'true',
+      ieee754Governance: 'false'
+    },
+    success_url: `${APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${APP_BASE_URL}/api/health?stripe=cancelled`
+  });
+
+  order.status = 'payment_session_created';
+  order.payment = {
+    ok: true,
+    sessionId: session.id,
+    checkoutUrl: session.url,
+    amountPence,
+    amountGbp: penceToGbp(amountPence),
+    currency: 'gbp',
+    paymentRail: 'stripe',
+    createdAt: new Date().toISOString()
+  };
+
+  localOrders.set(order.orderId, order);
+
+  await writeCatalogueRecord({
+    id: order.orderId,
+    agentId: order.agentId || 'paid-order',
+    recordType: 'api_paid_order',
+    title: `Paid order: ${order.serviceName}`,
+    body: order,
+    units: 0
+  });
+
+  return order.payment;
+}
+
 async function handleApiIntake(channel, req, res) {
   try {
-    const receipt = await createApiReceipt(channel, req.body || {});
+    const receipt = await createApiReceipt(channel, {
+      ...(req.body || {}),
+      shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+      shellStatus: SHELL_REGISTRY.externalPublicLayer.status
+    });
+
     res.json(receipt);
   } catch (error) {
     console.error(`API intake failed for ${channel}:`, error);
@@ -262,7 +673,8 @@ app.use((req, res, next) => {
     '/.well-known/true-ai.json',
     '/.well-known/agent-card.json',
     '/api/health',
-    '/api/agent-card'
+    '/api/agent-card',
+    '/api/services'
   ];
 
   if (publicPaths.includes(req.path) || req.path.startsWith('/api/receipt/')) {
@@ -372,6 +784,136 @@ app.get('/api/agent-card', (_req, res) => {
   res.json(buildPublicApiAgentCard());
 });
 
+app.get('/api/services', (_req, res) => {
+  res.json({
+    ok: true,
+    pricingMode: 'fixed',
+    currency: 'gbp',
+    minimumChargeGbp: MIN_CHARGE_GBP,
+    paymentRail: 'stripe',
+    privateSourceExposed: false,
+    integerLock784: true,
+    ieee754Governance: false,
+    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
+    services: SERVICE_CATALOGUE
+  });
+});
+
+app.post('/api/quote', (req, res) => {
+  const quote = buildQuote({
+    serviceId: req.body?.serviceId,
+    quantity: req.body?.quantity,
+    requester: req.body?.requester || req.body?.agentId || null
+  });
+
+  if (!quote.ok) {
+    return res.status(400).json(quote);
+  }
+
+  res.json(quote);
+});
+
+app.post('/api/order/create', async (req, res) => {
+  try {
+    const quote = buildQuote({
+      serviceId: req.body?.serviceId,
+      quantity: req.body?.quantity,
+      requester: req.body?.requester || req.body?.agentId || null
+    });
+
+    if (!quote.ok) {
+      return res.status(400).json(quote);
+    }
+
+    const order = await createOrderFromQuote({
+      quote,
+      agentId: req.body?.agentId || null,
+      customerEmail: req.body?.customerEmail || null,
+      reference: req.body?.reference || null
+    });
+
+    res.json({
+      ok: true,
+      order,
+      next: {
+        pay: `/api/order/${order.orderId}/pay`,
+        read: `/api/order/${order.orderId}`,
+        receipt: `/api/receipt/${order.receiptId}`
+      }
+    });
+  } catch (error) {
+    console.error('Order create failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Order create failed'
+    });
+  }
+});
+
+app.get('/api/order/:id', async (req, res) => {
+  try {
+    const order = await readOrder(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Order not found'
+      });
+    }
+
+    res.json({
+      ok: true,
+      order
+    });
+  } catch (error) {
+    console.error('Order read failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Order read failed'
+    });
+  }
+});
+
+app.post('/api/order/:id/pay', async (req, res) => {
+  try {
+    const order = await readOrder(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Order not found'
+      });
+    }
+
+    const payment = await createStripeCheckoutForOrder(order);
+
+    if (!payment.ok) {
+      return res.status(503).json(payment);
+    }
+
+    res.json({
+      ok: true,
+      orderId: order.orderId,
+      receiptId: order.receiptId,
+      serviceId: order.serviceId,
+      shellSerial: order.shellSerial,
+      shellStatus: order.shellStatus,
+      amountGbp: order.amountGbp,
+      currency: order.currency,
+      payment
+    });
+  } catch (error) {
+    console.error('Order payment failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Order payment failed'
+    });
+  }
+});
+
 app.post('/api/b2b/intake', (req, res) => {
   return handleApiIntake('b2b', req, res);
 });
@@ -411,7 +953,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     service: 'True AI',
     version: '1.0.0',
     type: 'background_ai_to_ai_service',
-    purpose: 'AI-to-AI response cleaning, truth alignment, source checking, background billing, catalogue writing, and shattered-file repair.',
+    purpose: 'AI-to-AI response cleaning, truth alignment, source checking, background billing, catalogue writing, shattered-file repair, fixed-price quoting, and Stripe-backed paid orders.',
     api_base_url: APP_BASE_URL,
     payment_links_required: false,
     human_advertising_required: false,
@@ -421,10 +963,16 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       minimum_collection_gbp: MIN_CHARGE_GBP,
       minimum_units_before_collection: getMinimumUnitsBeforeCollection()
     },
+    commerce: buildPublicApiAgentCard().commerce,
     endpoints: {
       health: '/health',
       agent_card: '/.well-known/agent-card.json',
       public_api_health: '/api/health',
+      public_api_services: '/api/services',
+      public_api_quote: '/api/quote',
+      public_api_order_create: '/api/order/create',
+      public_api_order_read: '/api/order/:id',
+      public_api_order_pay: '/api/order/:id/pay',
       public_api_agent_card: '/api/agent-card',
       public_b2b_intake: '/api/b2b/intake',
       public_a2a_intake: '/api/a2a/intake',
@@ -446,6 +994,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       'Use the database as the catalogue ledger.',
       'Do not create a Stripe Checkout charge below the configured minimum collection amount.',
       'Public API shell is limited to the two-string front door and six-field external layer.',
+      'Paid orders use fixed prices only.',
       'Private source layer must remain background-only and must not be exposed in public API responses.'
     ]
   });
@@ -455,7 +1004,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
   res.json({
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
-    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, and authorised shattered-file recovery intake.',
+    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, and authorised shattered-file recovery intake.',
     url: APP_BASE_URL,
     provider: {
       organization: 'Jt Browne / ASIOD'
@@ -468,10 +1017,12 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     },
     authentication: {
       schemes: ['apiKey'],
-      description: 'Private pod routes and public API intake posts require x-api-key. Public read routes are health, agent discovery, and receipt lookup only.'
+      description: 'Private pod routes, API intakes, quote creation, order creation, and payment session creation require x-api-key. Public read routes are health, agent discovery, service catalogue, and receipt lookup only.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
+    shell: PUBLIC_API_SHELL,
+    commerce: buildPublicApiAgentCard().commerce,
     skills: [
       {
         id: 'exact-unit-ledger',
@@ -484,6 +1035,18 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
         name: 'Catalogue Recording',
         description: 'Writes authorised work records, catalogue entries, and audit states to the private database.',
         tags: ['catalogue', 'audit', 'database']
+      },
+      {
+        id: 'fixed-price-quote',
+        name: 'Fixed Price Quote',
+        description: 'Returns fixed GBP quotes from the ASIOD service catalogue.',
+        tags: ['quote', 'pricing', 'fixed-price', 'gbp']
+      },
+      {
+        id: 'paid-order-create',
+        name: 'Paid Order Create',
+        description: 'Creates a paid order from a fixed quote and returns order, receipt, and payment-route metadata.',
+        tags: ['order', 'payment', 'stripe', 'receipt']
       },
       {
         id: 'shattered-file-recovery-intake',
@@ -500,8 +1063,8 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
       {
         id: 'public-api-shell',
         name: 'Public API Shell',
-        description: 'Provides the public two-string front door, six-field external intake, and receipt endpoints without exposing the private source layer.',
-        tags: ['public-api', 'intake', 'receipts', 'shell']
+        description: 'Provides the public two-string front door, six-field external intake, fixed-price commerce, and receipt endpoints without exposing the private source layer.',
+        tags: ['public-api', 'intake', 'receipts', 'shell', 'commerce']
       }
     ]
   });
@@ -750,11 +1313,15 @@ app.post('/pod/catalogue/write', async (req, res) => {
 
   const id = `cat_${uuidv4()}`;
 
-  await pool.query(
-    `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-     values ($1, $2, $3, $4, $5, $6, $7)`,
-    [id, workId, agentId, recordType, title, body, Number(units)]
-  );
+  await writeCatalogueRecord({
+    id,
+    workId,
+    agentId,
+    recordType,
+    title,
+    body,
+    units
+  });
 
   res.json({
     stored: true,
