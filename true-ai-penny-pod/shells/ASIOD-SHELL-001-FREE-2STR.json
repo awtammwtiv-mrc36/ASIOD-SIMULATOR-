@@ -1,0 +1,47 @@
+{
+  "shellSerial": "ASIOD-SHELL-001-FREE-2STR",
+  "shellVersion": "1.0.0",
+  "shellName": "Free Two-String Front Door",
+  "shellRole": "free-two-string-front-door",
+  "shellClass": "public-entry-shell",
+  "status": "active",
+  "shutterable": true,
+  "privateSourceExposed": false,
+  "integerLock784": true,
+  "ieee754Governance": false,
+  "decimalAuthority": false,
+  "decimalDisplay": "diagnostic-only",
+  "ownerRegistration": {
+    "registryId": "ASIOD-SHELL-OWNER-REGISTRY-001",
+    "legalOwnerPublicId": "ASIOD-OWNER-001",
+    "registeredOperatorPublicId": "ASIOD-OPERATOR-001",
+    "registeredOccupierPublicId": "ASIOD-OCCUPIER-001",
+    "publicOwnerLabel": "ASIOD Service Owner",
+    "publicOperatorLabel": "ASIOD Public Operator",
+    "publicOccupierLabel": "Free Front Door Shell",
+    "privatePersonalDataExposed": false
+  },
+  "routing": {
+    "sourceShell": "ASIOD-SHELL-014-PRIVATE-SOURCE",
+    "gatewayShell": "ASIOD-SHELL-002-PUBLIC-6FIELD",
+    "publicReturnShell": "ASIOD-SHELL-001-FREE-2STR",
+    "directPublicBrainAccess": false,
+    "brainCommunicatesThroughSimulatorOnly": true,
+    "simulatorFiltersPublicOutput": true
+  },
+  "permissions": {
+    "publicRead": true,
+    "publicWrite": false,
+    "requiresApiKeyForWrite": true,
+    "mayCreateOrders": false,
+    "mayCreateStripeSessions": false,
+    "mayExposePrivateSource": false
+  },
+  "paymentSplit": {
+    "enabled": false,
+    "currency": "gbp",
+    "percentageOut": null,
+    "notes": "Free front-door shell does not route payouts directly."
+  },
+  "registrationReady": true
+}
