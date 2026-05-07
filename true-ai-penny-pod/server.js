@@ -910,7 +910,7 @@ app.post('/api/order/:id/pay', async (req, res) => {
     res.status(500).json({
       ok: false,
       error: 'Order payment failed'
-    });
+    })
   }
 })
 app.post('/api/brain/test', async (req, res) => {
@@ -953,6 +953,64 @@ app.post('/api/brain/test', async (req, res) => {
     res.status(500).json({
       ok: false,
       error: 'Brain route test failed'
+    });
+  }
+});
+app.post('/api/brain/job', async (req, res) => {
+  try {
+    const brainJobId = `brain_job_${uuidv4()}`;
+    const createdAt = new Date().toISOString();
+
+    const {
+      agentId = 'brain-job',
+      orderId = null,
+      customerShellSerial = null,
+      jobType = 'general',
+      payload = {}
+    } = req.body || {};
+
+    const result = {
+      ok: true,
+      brainJobId,
+      status: 'accepted-through-six-field-simulator',
+      jobType,
+      orderId,
+      customerShellSerial,
+      sourceShell: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
+      gatewayShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      publicReturnShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      directPublicBrainAccess: false,
+      brainCommunicatesThroughSimulatorOnly: true,
+      simulatorFiltersPublicOutput: true,
+      privateSourceExposed: false,
+      integerLock784: true,
+      ieee754Governance: false,
+      decimalAuthority: false,
+      createdAt,
+      receivedPayload: sanitizePublicPayload(payload),
+      safePublicResult: {
+        processed: true,
+        resultType: 'simulator-filtered-job-receipt',
+        message: 'Brain job accepted through the six-field simulator gateway. Private source remains sealed.'
+      }
+    };
+
+    result.catalogueStored = await writeCatalogueRecord({
+      id: brainJobId,
+      agentId,
+      recordType: 'api_brain_job',
+      title: `Brain job: ${jobType}`,
+      body: result,
+      units: Number(req.body?.units || 0)
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Brain job failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Brain job failed'
     });
   }
 });
