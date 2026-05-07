@@ -1,1 +1,36 @@
-
+{
+  "customerShellSerial": "ASIOD-CUSTOMER-SHELL-003",
+  "shellVersion": "1.0.0",
+  "shellType": "customer-registered-revenue-shell",
+  "registeredCustomerPublicId": "ASIOD-CUSTOMER-003",
+  "registeredCustomerLabel": "Unassigned Customer Shell 003",
+  "registeredOccupierPublicId": "ASIOD-CUSTOMER-OCCUPIER-003",
+  "status": "reserved-unassigned",
+  "active": false,
+  "shutterable": true,
+  "privateSourceExposed": false,
+  "integerLock784": true,
+  "ieee754Governance": false,
+  "decimalAuthority": false,
+  "decimalDisplay": "diagnostic-only",
+  "routedThrough": {
+    "gatewayShell": "ASIOD-SHELL-002-PUBLIC-6FIELD",
+    "paymentShell": "ASIOD-SHELL-003-PAID-ORDER",
+    "privateBrainShell": "ASIOD-SHELL-014-PRIVATE-SOURCE",
+    "directPublicBrainAccess": false,
+    "brainCommunicatesThroughSimulatorOnly": true,
+    "simulatorFiltersPublicOutput": true,
+    "privateSourceExposed": false
+  },
+  "financialSplit": {
+    "enabled": false,
+    "currency": "gbp",
+    "customerPercentageOut": null,
+    "platformPercentageOut": null,
+    "operatorPercentageOut": null,
+    "payoutAccountPublicId": null,
+    "notes": "Reserved customer shell. Assign customer and percentages before activation."
+  },
+  "allowedServices": [],
+  "registrationReady": false
+}
