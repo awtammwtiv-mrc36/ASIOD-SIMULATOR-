@@ -1,0 +1,42 @@
+{
+  "registryVersion": "1.0.0",
+  "lawId": "ASIOD-BRAIN-ROUTING-LAW-001",
+  "lawName": "14-field brain through 6-field simulator routing law",
+  "privateBrainShell": "ASIOD-SHELL-014-PRIVATE-SOURCE",
+  "publicSimulatorShell": "ASIOD-SHELL-002-PUBLIC-6FIELD",
+  "paidOrderShell": "ASIOD-SHELL-003-PAID-ORDER",
+  "freeFrontDoorShell": "ASIOD-SHELL-001-FREE-2STR",
+  "directPublicBrainAccess": false,
+  "brainCommunicatesThroughSimulatorOnly": true,
+  "simulatorFiltersPublicOutput": true,
+  "publicRoutesMayCallPrivateBrainDirectly": false,
+  "privateSourceExposed": false,
+  "integerLock784": true,
+  "ieee754Governance": false,
+  "decimalAuthority": false,
+  "decimalDisplay": "diagnostic-only",
+  "routeOrder": [
+    "external-ai-or-customer",
+    "public-api-shell",
+    "payment-order-receipt-shell",
+    "six-field-simulator-gateway",
+    "fourteen-field-private-brain",
+    "six-field-simulator-output-filter",
+    "public-api-safe-return"
+  ],
+  "stampingRequired": {
+    "quote": true,
+    "order": true,
+    "receipt": true,
+    "workerJob": true
+  },
+  "requiredStamps": [
+    "sourceShell",
+    "gatewayShell",
+    "publicReturnShell",
+    "privateSourceExposed",
+    "integerLock784",
+    "ieee754Governance"
+  ],
+  "status": "active"
+    }
