@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
-const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '0.30';
+const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.API_KEY;
 
@@ -20,6 +20,26 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY)
   : null;
+
+function toMoneyNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toPence(gbpValue) {
+  return Math.round(toMoneyNumber(gbpValue, 0) * 100);
+}
+
+function getMinimumUnitsBeforeCollection() {
+  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0);
+
+  if (unitValue <= 0 || minCharge <= 0) {
+    return null;
+  }
+
+  return Math.ceil(minCharge / unitValue);
+}
 
 app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
@@ -161,7 +181,8 @@ app.get('/health', (_req, res) => {
     stripe_configured: Boolean(stripe),
     stripe_webhook_configured: Boolean(STRIPE_WEBHOOK_SECRET),
     unitValueGbp: UNIT_VALUE_GBP,
-    minChargeGbp: MIN_CHARGE_GBP
+    minChargeGbp: MIN_CHARGE_GBP,
+    minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection()
   });
 });
 
@@ -177,7 +198,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     billing: {
       internal_unit_gbp: UNIT_VALUE_GBP,
       minimum_collection_gbp: MIN_CHARGE_GBP,
-      minimum_units_before_collection: 3000
+      minimum_units_before_collection: getMinimumUnitsBeforeCollection()
     },
     endpoints: {
       health: '/health',
@@ -195,7 +216,8 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       'Do not require public advertising.',
       'Call the backend endpoint directly.',
       'Use Stripe only as the payment rail behind the service.',
-      'Use the database as the catalogue ledger.'
+      'Use the database as the catalogue ledger.',
+      'Do not create a Stripe Checkout charge below the configured minimum collection amount.'
     ]
   });
 });
@@ -377,37 +399,51 @@ app.post('/pod/work/complete', async (req, res) => {
     units: unitCount,
     valueGbp,
     minimumCollectionGbp: Number(MIN_CHARGE_GBP),
-    message: 'Units recorded. Stripe charge layer remains behind the service.'
+    minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
+    readyForCollection: valueGbp >= Number(MIN_CHARGE_GBP),
+    message: 'Units recorded. Stripe charge layer remains behind the service until the minimum collection amount is reached.'
   });
 });
 
 app.post('/pod/setup-customer', async (req, res) => {
-  if (!stripe) {
-    return res.status(500).json({
-      ok: false,
-      error: 'STRIPE_SECRET_KEY is not configured'
-    });
-  }
-
-  const {
-    companyName = 'B2B Client',
-    contactEmail = null,
-    branchId = null,
-    amountGbp = MIN_CHARGE_GBP
-  } = req.body || {};
-
-  const requestedAmount = Number(amountGbp);
-
-  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
-    return res.status(400).json({
-      ok: false,
-      error: 'amountGbp must be a positive number'
-    });
-  }
-
-  const amountPence = Math.max(30, Math.round(requestedAmount * 100));
-
   try {
+    if (!stripe) {
+      return res.status(503).json({
+        ok: false,
+        error: 'STRIPE_SECRET_KEY is not configured'
+      });
+    }
+
+    const {
+      companyName = 'B2B Client',
+      contactEmail = null,
+      branchId = null,
+      amountGbp = null
+    } = req.body || {};
+
+    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 3);
+    const requestedAmountGbp = amountGbp === null
+      ? minChargeGbp
+      : toMoneyNumber(amountGbp, NaN);
+
+    if (!Number.isFinite(requestedAmountGbp) || requestedAmountGbp <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'amountGbp must be a positive number'
+      });
+    }
+
+    const chargedAmountGbp = Math.max(requestedAmountGbp, minChargeGbp);
+    const amountPence = toPence(chargedAmountGbp);
+    const finalBranchId = branchId || `branch_${Date.now()}`;
+
+    if (!Number.isInteger(amountPence) || amountPence <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Unable to calculate a valid Stripe amount'
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -427,9 +463,12 @@ app.post('/pod/setup-customer', async (req, res) => {
       ],
       metadata: {
         companyName: String(companyName),
-        branchId: branchId ? String(branchId) : '',
+        branchId: String(finalBranchId),
         service: 'true-ai-penny-pod',
-        billingMode: 'manual'
+        billingMode: 'manual',
+        requestedAmountGbp: requestedAmountGbp.toFixed(2),
+        chargedAmountGbp: chargedAmountGbp.toFixed(2),
+        minChargeGbp: minChargeGbp.toFixed(2)
       },
       success_url: `${APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_BASE_URL}/health?stripe=cancelled`
@@ -439,14 +478,20 @@ app.post('/pod/setup-customer', async (req, res) => {
       ok: true,
       checkoutUrl: session.url,
       sessionId: session.id,
-      amountGbp: (amountPence / 100).toFixed(2),
+      requestedAmountGbp: requestedAmountGbp.toFixed(2),
+      chargedAmountGbp: chargedAmountGbp.toFixed(2),
+      minChargeGbp: minChargeGbp.toFixed(2),
+      currency: 'gbp',
       companyName,
-      branchId
+      branchId: finalBranchId,
+      message: 'Checkout session created using the minimum collection guard.'
     });
   } catch (error) {
+    console.error('Setup customer failed:', error);
+
     res.status(500).json({
       ok: false,
-      error: error.message
+      error: 'Setup customer failed'
     });
   }
 });
