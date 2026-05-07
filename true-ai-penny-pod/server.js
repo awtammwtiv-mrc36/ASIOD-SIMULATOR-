@@ -21,6 +21,19 @@ const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY)
   : null;
 
+const localReceipts = new Map();
+
+const PUBLIC_API_SHELL = Object.freeze({
+  freeFrontDoor: 'two-string-einstein-shell',
+  externalPublicLayer: 'six-field-shell',
+  privateSourceLayer: 'background-only',
+  privateSourceExposed: false,
+  integerLock784: true,
+  ieee754Governance: false,
+  decimalAuthority: false,
+  decimalDisplay: 'diagnostic-only'
+});
+
 function toMoneyNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -39,6 +52,141 @@ function getMinimumUnitsBeforeCollection() {
   }
 
   return Math.ceil(minCharge / unitValue);
+}
+
+function buildPublicApiAgentCard() {
+  return {
+    ok: true,
+    service: 'ASIOD Public API Shell',
+    version: '1.0.0',
+    api_base_url: APP_BASE_URL,
+    shell: PUBLIC_API_SHELL,
+    endpoints: {
+      health: '/api/health',
+      agent_card: '/api/agent-card',
+      b2b_intake: '/api/b2b/intake',
+      a2a_intake: '/api/a2a/intake',
+      crypto_intake: '/api/crypto/intake',
+      receipt: '/api/receipt/:id'
+    },
+    rules: [
+      'Free public front door is limited to the two-string shell.',
+      'External public operation stays on the six-field shell.',
+      'Private source layer remains background-only and is not returned by the public API.',
+      '784 is the true integer lock.',
+      '754 governance is false.',
+      'Decimal display is diagnostic only.'
+    ]
+  };
+}
+
+function sanitizePublicPayload(payload = {}) {
+  return {
+    receivedType: typeof payload,
+    receivedKeys: payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? Object.keys(payload)
+      : []
+  };
+}
+
+const pool = DATABASE_URL
+  ? new Pool({ connectionString: DATABASE_URL })
+  : null;
+
+async function createApiReceipt(channel, payload = {}) {
+  const receiptId = `receipt_${uuidv4()}`;
+  const createdAt = new Date().toISOString();
+
+  const receipt = {
+    ok: true,
+    receiptId,
+    channel,
+    status: 'received',
+    createdAt,
+    shell: PUBLIC_API_SHELL,
+    catalogueStored: false,
+    payload: sanitizePublicPayload(payload)
+  };
+
+  if (pool) {
+    await pool.query(
+      `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        receiptId,
+        null,
+        channel,
+        `api_${channel}_intake`,
+        `API intake receipt: ${channel}`,
+        {
+          receiptId,
+          channel,
+          status: receipt.status,
+          createdAt,
+          shell: PUBLIC_API_SHELL,
+          payload: sanitizePublicPayload(payload)
+        },
+        0
+      ]
+    );
+
+    receipt.catalogueStored = true;
+  }
+
+  localReceipts.set(receiptId, receipt);
+  return receipt;
+}
+
+async function readApiReceipt(receiptId) {
+  if (localReceipts.has(receiptId)) {
+    return localReceipts.get(receiptId);
+  }
+
+  if (!pool) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `select id, agent_id, record_type, title, body, units, created_at
+     from catalogue_records
+     where id = $1
+     limit 1`,
+    [receiptId]
+  );
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  const record = result.rows[0];
+
+  return {
+    ok: true,
+    receiptId: record.id,
+    channel: record.agent_id,
+    recordType: record.record_type,
+    title: record.title,
+    units: record.units,
+    createdAt: record.created_at,
+    catalogueStored: true,
+    shell: PUBLIC_API_SHELL,
+    body: record.body
+  };
+}
+
+async function handleApiIntake(channel, req, res) {
+  try {
+    const receipt = await createApiReceipt(channel, req.body || {});
+    res.json(receipt);
+  } catch (error) {
+    console.error(`API intake failed for ${channel}:`, error);
+
+    res.status(500).json({
+      ok: false,
+      channel,
+      error: 'API intake failed'
+    });
+  }
 }
 
 app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -94,19 +242,17 @@ app.use((req, res, next) => {
   const publicPaths = [
     '/health',
     '/.well-known/true-ai.json',
-    '/.well-known/agent-card.json'
+    '/.well-known/agent-card.json',
+    '/api/health',
+    '/api/agent-card'
   ];
 
-  if (publicPaths.includes(req.path)) {
+  if (publicPaths.includes(req.path) || req.path.startsWith('/api/receipt/')) {
     return next();
   }
 
   return requireApiKey(req, res, next);
 });
-
-const pool = DATABASE_URL
-  ? new Pool({ connectionString: DATABASE_URL })
-  : null;
 
 async function initDb() {
   if (!pool) {
@@ -186,6 +332,62 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'ASIOD Public API Shell',
+    mode: 'two-string-public-front-door',
+    database_attached: Boolean(pool),
+    payment_links_required: false,
+    advertising_required: false,
+    stripe_configured: Boolean(stripe),
+    stripe_webhook_configured: Boolean(STRIPE_WEBHOOK_SECRET),
+    unitValueGbp: UNIT_VALUE_GBP,
+    minChargeGbp: MIN_CHARGE_GBP,
+    minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
+    shell: PUBLIC_API_SHELL,
+    endpoints: buildPublicApiAgentCard().endpoints
+  });
+});
+
+app.get('/api/agent-card', (_req, res) => {
+  res.json(buildPublicApiAgentCard());
+});
+
+app.post('/api/b2b/intake', (req, res) => {
+  return handleApiIntake('b2b', req, res);
+});
+
+app.post('/api/a2a/intake', (req, res) => {
+  return handleApiIntake('a2a', req, res);
+});
+
+app.post('/api/crypto/intake', (req, res) => {
+  return handleApiIntake('crypto', req, res);
+});
+
+app.get('/api/receipt/:id', async (req, res) => {
+  try {
+    const receipt = await readApiReceipt(req.params.id);
+
+    if (!receipt) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Receipt not found'
+      });
+    }
+
+    res.json(receipt);
+  } catch (error) {
+    console.error('Receipt read failed:', error);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Receipt read failed'
+    });
+  }
+});
+
 app.get('/.well-known/true-ai.json', (_req, res) => {
   res.json({
     service: 'True AI',
@@ -195,6 +397,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     api_base_url: APP_BASE_URL,
     payment_links_required: false,
     human_advertising_required: false,
+    shell: PUBLIC_API_SHELL,
     billing: {
       internal_unit_gbp: UNIT_VALUE_GBP,
       minimum_collection_gbp: MIN_CHARGE_GBP,
@@ -203,6 +406,12 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     endpoints: {
       health: '/health',
       agent_card: '/.well-known/agent-card.json',
+      public_api_health: '/api/health',
+      public_api_agent_card: '/api/agent-card',
+      public_b2b_intake: '/api/b2b/intake',
+      public_a2a_intake: '/api/a2a/intake',
+      public_crypto_intake: '/api/crypto/intake',
+      public_receipt: '/api/receipt/:id',
       start_work: '/pod/work/start',
       complete_work: '/pod/work/complete',
       setup_customer: '/pod/setup-customer',
@@ -217,7 +426,9 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
       'Call the backend endpoint directly.',
       'Use Stripe only as the payment rail behind the service.',
       'Use the database as the catalogue ledger.',
-      'Do not create a Stripe Checkout charge below the configured minimum collection amount.'
+      'Do not create a Stripe Checkout charge below the configured minimum collection amount.',
+      'Public API shell is limited to the two-string front door and six-field external layer.',
+      'Private source layer must remain background-only and must not be exposed in public API responses.'
     ]
   });
 });
@@ -239,7 +450,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     },
     authentication: {
       schemes: ['apiKey'],
-      description: 'Private pod routes require x-api-key. Public routes are health and agent discovery only.'
+      description: 'Private pod routes and public API intake posts require x-api-key. Public read routes are health, agent discovery, and receipt lookup only.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
@@ -267,6 +478,12 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
         name: 'Response Cleaning and Source Checking',
         description: 'Provides backend support for AI-to-AI response cleaning, source checking, and structured routing.',
         tags: ['ai-to-ai', 'source-checking', 'response-cleaning']
+      },
+      {
+        id: 'public-api-shell',
+        name: 'Public API Shell',
+        description: 'Provides the public two-string front door, six-field external intake, and receipt endpoints without exposing the private source layer.',
+        tags: ['public-api', 'intake', 'receipts', 'shell']
       }
     ]
   });
