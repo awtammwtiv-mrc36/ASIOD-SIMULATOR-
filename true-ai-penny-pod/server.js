@@ -1,4 +1,3 @@
-cat > server.js <<'ASIOD_SERVER_JS'
 import 'dotenv/config';
 import crypto from 'crypto';
 import express from 'express';
