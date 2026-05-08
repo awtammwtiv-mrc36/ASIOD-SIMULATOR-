@@ -13,14 +13,6 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
-const PUBLIC_HOST = new URL(APP_BASE_URL).host.toLowerCase();
-
-const ALLOWED_HOSTS = new Set([
-  PUBLIC_HOST,
-  'localhost',
-  '127.0.0.1'
-]);
-
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -35,7 +27,6 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY)
   : null;
-
 
 const localReceipts = new Map();
 const localQuotes = new Map();
@@ -246,12 +237,14 @@ function isPublicPath(path) {
 
 function getSuppliedApiKey(req) {
   const headerKey = req.get('x-api-key');
+
   if (headerKey) {
     return headerKey;
   }
 
   const auth = req.get('authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
+
   return match ? match[1] : null;
 }
 
@@ -423,6 +416,12 @@ const pool = DATABASE_URL
   ? new Pool({ connectionString: DATABASE_URL })
   : null;
 
+if (pool) {
+  pool.on('error', (error) => {
+    console.error('Unexpected database pool error:', error);
+  });
+}
+
 async function writeCatalogueRecord({
   id,
   workId = null,
@@ -526,6 +525,7 @@ async function readApiReceipt(receiptId) {
 
 async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null } = {}) {
   const orderId = `order_${uuidv4()}`;
+
   const receipt = await createApiReceipt('order', {
     orderId,
     quoteId: quote.quoteId,
@@ -695,11 +695,11 @@ async function handleApiIntake(channel, req, res) {
       shellStatus: SHELL_REGISTRY.externalPublicLayer.status
     });
 
-    res.json(receipt);
+    return res.json(receipt);
   } catch (error) {
     console.error(`API intake failed for ${channel}:`, error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       channel,
       error: 'API intake failed'
@@ -708,7 +708,7 @@ async function handleApiIntake(channel, req, res) {
 }
 
 function sendUnauthorized(res) {
-  res.status(401).json({
+  return res.status(401).json({
     ok: false,
     error: 'Unauthorized'
   });
@@ -781,6 +781,7 @@ function rateLimit(req, res, next) {
 
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
+
   for (const [key, bucket] of rateBuckets.entries()) {
     if (bucket.resetAt <= now) {
       rateBuckets.delete(key);
@@ -791,19 +792,7 @@ const cleanupTimer = setInterval(() => {
 if (typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
-function hostGate(req, res, next) {
-  const host = String(req.headers.host || '')
-    .split(':')[0]
-    .toLowerCase();
 
-  if (ALLOWED_HOSTS.has(host)) {
-    return next();
-  }
-
-  return res.status(404).send('Not found');
-}
-
-app.use(hostGate);
 app.use(securityHeaders);
 app.use(rateLimit);
 
@@ -828,7 +817,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
 
   console.log(`Stripe webhook received: ${event.type}`);
 
-  res.json({
+  return res.json({
     received: true,
     type: event.type
   });
@@ -907,7 +896,7 @@ async function initDb() {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({
+  return res.json({
     ok: true,
     service: 'True AI Penny Pod',
     version: '1.0.1-secure',
@@ -935,7 +924,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({
+  return res.json({
     ok: true,
     service: 'ASIOD Public API Shell',
     version: '1.0.1-secure',
@@ -955,11 +944,11 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/agent-card', (_req, res) => {
-  res.json(buildPublicApiAgentCard());
+  return res.json(buildPublicApiAgentCard());
 });
 
 app.get('/api/services', (_req, res) => {
-  res.json({
+  return res.json({
     ok: true,
     pricingMode: 'fixed',
     currency: 'gbp',
@@ -1229,7 +1218,7 @@ app.get('/api/receipt/:id', async (req, res) => {
 });
 
 app.get('/.well-known/true-ai.json', (_req, res) => {
-  res.json({
+  return res.json({
     service: 'True AI Penny Pod',
     version: '1.0.1-secure',
     type: 'public_discovery_manifest',
@@ -1257,7 +1246,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
 });
 
 app.get('/.well-known/agent-card.json', (_req, res) => {
-  res.json({
+  return res.json({
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
     description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, and authorised shattered-file recovery intake.',
@@ -1644,7 +1633,7 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
 });
 
 app.use((req, res) => {
-  res.status(404).json({
+  return res.status(404).json({
     ok: false,
     error: 'Not found'
   });
@@ -1666,17 +1655,16 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-initDb()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
-    });
-  })
-  .catch((error) => {
-    console.error('Startup failed:', error);
-    process.exit(1);
-  });
-ASIOD_SERVER_JS
+async function startServer() {
+  try {
+    await initDb();
+  } catch (error) {
+    console.error('Database initialisation failed. Service will continue running with database-dependent routes returning errors as needed:', error);
+  }
 
-node --check server.js
-echo "SECURE SERVER.JS REPLACED AND SYNTAX CHECK PASSED"
+  app.listen(PORT, () => {
+    console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
+  });
+}
+
+startServer();
