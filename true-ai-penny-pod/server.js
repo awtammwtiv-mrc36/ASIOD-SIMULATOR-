@@ -791,7 +791,19 @@ const cleanupTimer = setInterval(() => {
 if (typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
+function hostGate(req, res, next) {
+  const host = String(req.headers.host || '')
+    .split(':')[0]
+    .toLowerCase();
 
+  if (ALLOWED_HOSTS.has(host)) {
+    return next();
+  }
+
+  return res.status(404).send('Not found');
+}
+
+app.use(hostGate);
 app.use(securityHeaders);
 app.use(rateLimit);
 
