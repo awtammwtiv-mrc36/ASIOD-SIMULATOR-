@@ -29,6 +29,7 @@ const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY)
   : null;
 
+
 const localReceipts = new Map();
 const localQuotes = new Map();
 const localOrders = new Map();
