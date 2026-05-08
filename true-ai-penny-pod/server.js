@@ -1788,7 +1788,7 @@ app.use((error, _req, res, _next) => {
       ok: false,
       error: 'Request body too large'
     });
-  }
+  });
 
   return res.status(500).json({
     ok: false,
