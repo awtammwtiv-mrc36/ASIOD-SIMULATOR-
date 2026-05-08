@@ -1636,41 +1636,23 @@ app.use((req, res) => {
 const quarantinedScannerHits = new Map();
 
 function isScannerNoisePath(path = '') {
-  const p = String(path).toLowerCase();
-
-  return (
-    p.endsWith('.php') ||
-    p.includes('/wp-') ||
-    p.includes('/wordpress') ||
-    p.includes('/phpinfo') ||
-    p.includes('/admin') ||
-    p.includes('/cpanel') ||
-    p.includes('/webmail') ||
-    p.includes('/server-status') ||
-    p.includes('/.env') ||
-    p.includes('/config') ||
-    p.includes('/vendor') ||
-    p.includes('/includes') ||
-    p.includes('/staging') ||
-    p.includes('/old') ||
-    p.includes('/backup') ||
-    p.includes('/test') ||
-    p.includes('/tmp') ||
-    p.includes('/public_html') ||
-    p.includes('/htdocs')
-  );
+  ...
 }
 
 app.use((req, res, next) => {
-  if (!isScannerNoisePath(req.path)) {
-    return next();
-  }
+  ...
+});
 
-  const ip = getClientIp(req);
-  const current = quarantinedScannerHits.get(ip) || {
-    count: 0,
-    firstSeen: new Date().toISOString()
-  };
+app.use((req, res) => {
+  return res.status(404).json({
+    ok: false,
+    error: 'Not found'
+  });
+});
+
+app.use((error, _req, res, _next) => {
+  ...
+});
 
   current.count += 1;
   current.lastSeen = new Date().toISOString();
