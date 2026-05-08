@@ -1709,25 +1709,48 @@ app.use((error, _req, res, _next) => {
   }
 
   return res.status(500).json({
-    ok: false,
-    error: 'Internal server error'
-  });
-});
-});
+const quarantinedScannerHits = new Map();
 
-app.use((req, res) => {
-  return res.status(404).json({
-    ok: false,
-    error: 'Not found'
-  });
-});
+function isScannerNoisePath(path = '') {
+  const p = String(path).toLowerCase();
 
-app.use((error, _req, res, _next) => {
-  ...
-});
+  return (
+    p.endsWith('.php') ||
+    p.includes('/wp-') ||
+    p.includes('/wordpress') ||
+    p.includes('/phpinfo') ||
+    p.includes('/admin') ||
+    p.includes('/cpanel') ||
+    p.includes('/webmail') ||
+    p.includes('/server-status') ||
+    p.includes('/.env') ||
+    p.includes('/config') ||
+    p.includes('/vendor') ||
+    p.includes('/includes') ||
+    p.includes('/staging') ||
+    p.includes('/old') ||
+    p.includes('/backup') ||
+    p.includes('/test') ||
+    p.includes('/tmp') ||
+    p.includes('/public_html') ||
+    p.includes('/htdocs')
+  );
+}
+
+app.use((req, res, next) => {
+  if (!isScannerNoisePath(req.path)) {
+    return next();
+  }
+
+  const ip = getClientIp(req);
+  const current = quarantinedScannerHits.get(ip) || {
+    count: 0,
+    firstSeen: new Date().toISOString()
+  };
 
   current.count += 1;
   current.lastSeen = new Date().toISOString();
+  current.lastMethod = req.method;
   current.lastPath = req.path;
   quarantinedScannerHits.set(ip, current);
 
@@ -1737,6 +1760,26 @@ app.use((error, _req, res, _next) => {
 
   return res.status(404).type('text/plain').send('Not found');
 });
+
+app.use((req, res, next) => {
+  if (req.method !== 'HEAD') {
+    return next();
+  }
+
+  if (isPublicPath(req.path)) {
+    return res.status(204).end();
+  }
+
+  return res.status(404).end();
+});
+
+app.use((req, res) => {
+  return res.status(404).json({
+    ok: false,
+    error: 'Not found'
+  });
+});
+
 app.use((error, _req, res, _next) => {
   console.error('Unhandled request error:', error);
 
