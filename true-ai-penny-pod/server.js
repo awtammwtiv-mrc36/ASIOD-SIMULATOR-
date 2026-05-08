@@ -1627,20 +1627,92 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
   });
 });
 
+const quarantinedScannerHits = new Map();
+
+function isScannerNoisePath(path = '') {
+  const p = String(path).toLowerCase();
+
+  return (
+    p.endsWith('.php') ||
+    p.includes('/wp-') ||
+    p.includes('/wordpress') ||
+    p.includes('/phpinfo') ||
+    p.includes('/admin') ||
+    p.includes('/cpanel') ||
+    p.includes('/webmail') ||
+    p.includes('/server-status') ||
+    p.includes('/.env') ||
+    p.includes('/config') ||
+    p.includes('/vendor') ||
+    p.includes('/includes') ||
+    p.includes('/staging') ||
+    p.includes('/old') ||
+    p.includes('/backup') ||
+    p.includes('/test') ||
+    p.includes('/tmp') ||
+    p.includes('/public_html') ||
+    p.includes('/htdocs')
+  );
+}
+
+app.use((req, res, next) => {
+  if (!isScannerNoisePath(req.path)) {
+    return next();
+  }
+
+  const ip = getClientIp(req);
+  const current = quarantinedScannerHits.get(ip) || {
+    count: 0,
+    firstSeen: new Date().toISOString()
+  };
+
+  current.count += 1;
+  current.lastSeen = new Date().toISOString();
+  current.lastMethod = req.method;
+  current.lastPath = req.path;
+  quarantinedScannerHits.set(ip, current);
+
+  if (current.count >= 3) {
+    return res.status(403).type('text/plain').send('Forbidden');
+  }
+
+  return res.status(404).type('text/plain').send('Not found');
+});
+
+app.use((req, res, next) => {
+  if (req.method !== 'HEAD') {
+    return next();
+  }
+
+  if (isPublicPath(req.path)) {
+    return res.status(204).end();
+  }
+
+  return res.status(404).end();
+});
+
 app.use((req, res) => {
   return res.status(404).json({
     ok: false,
     error: 'Not found'
   });
 });
-const quarantinedScannerHits = new Map();
 
-function isScannerNoisePath(path = '') {
-  ...
-}
+app.use((error, _req, res, _next) => {
+  console.error('Unhandled request error:', error);
 
-app.use((req, res, next) => {
-  ...
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({
+      ok: false,
+      error: 'Request body too large'
+    });
+  }
+
+  return res.status(500).json({
+    ok: false,
+    error: 'Internal server error'
+  });
+});
 });
 
 app.use((req, res) => {
