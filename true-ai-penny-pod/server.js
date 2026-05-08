@@ -13,6 +13,14 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
+const PUBLIC_HOST = new URL(APP_BASE_URL).host.toLowerCase();
+
+const ALLOWED_HOSTS = new Set([
+  PUBLIC_HOST,
+  'localhost',
+  '127.0.0.1'
+]);
+
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
 const DATABASE_URL = process.env.DATABASE_URL;
