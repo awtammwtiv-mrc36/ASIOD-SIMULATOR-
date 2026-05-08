@@ -1,10 +1,15 @@
+cat > server.js <<'ASIOD_SERVER_JS'
 import 'dotenv/config';
+import crypto from 'crypto';
 import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
@@ -13,6 +18,9 @@ const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.API_KEY;
+const MAX_JSON_BODY = process.env.MAX_JSON_BODY || '2mb';
+const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
+const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -24,6 +32,7 @@ const stripe = STRIPE_SECRET_KEY
 const localReceipts = new Map();
 const localQuotes = new Map();
 const localOrders = new Map();
+const rateBuckets = new Map();
 
 const SHELL_REGISTRY = Object.freeze({
   freeFrontDoor: {
@@ -64,8 +73,11 @@ const PUBLIC_API_SHELL = Object.freeze({
   freeFrontDoor: 'two-string-einstein-shell',
   externalPublicLayer: 'six-field-shell',
   paidOrderLayer: 'fixed-price-stripe-shell',
-  privateSourceLayer: 'background-only',
+  privateSourceLayer: 'sealed-background-only',
   privateSourceExposed: false,
+  directPrivateSourceAccess: false,
+  publicPrivateSourceRoutes: false,
+  privateSourceSerialPublic: false,
   integerLock784: true,
   ieee754Governance: false,
   decimalAuthority: false,
@@ -74,16 +86,25 @@ const PUBLIC_API_SHELL = Object.freeze({
     freeFrontDoor: SHELL_REGISTRY.freeFrontDoor.shellSerial,
     externalPublicLayer: SHELL_REGISTRY.externalPublicLayer.shellSerial,
     paidOrderLayer: SHELL_REGISTRY.paidOrderLayer.shellSerial,
-    privateSourceLayer: SHELL_REGISTRY.privateSourceLayer.shellSerial
+    privateSourceLayer: 'sealed'
   },
   shellStatus: {
     freeFrontDoor: SHELL_REGISTRY.freeFrontDoor.status,
     externalPublicLayer: SHELL_REGISTRY.externalPublicLayer.status,
     paidOrderLayer: SHELL_REGISTRY.paidOrderLayer.status,
-    privateSourceLayer: SHELL_REGISTRY.privateSourceLayer.status
+    privateSourceLayer: 'sealed'
   },
   shutdownSafe: true
 });
+
+const PUBLIC_PATHS = Object.freeze(new Set([
+  '/health',
+  '/.well-known/true-ai.json',
+  '/.well-known/agent-card.json',
+  '/api/health',
+  '/api/agent-card',
+  '/api/services'
+]));
 
 const SERVICE_CATALOGUE = Object.freeze([
   {
@@ -207,6 +228,36 @@ function getServiceById(serviceId) {
   return SERVICE_CATALOGUE.find((service) => service.serviceId === serviceId && service.active);
 }
 
+function getClientIp(req) {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+function isPublicPath(path) {
+  return PUBLIC_PATHS.has(path);
+}
+
+function getSuppliedApiKey(req) {
+  const headerKey = req.get('x-api-key');
+  if (headerKey) {
+    return headerKey;
+  }
+
+  const auth = req.get('authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : null;
+}
+
+function constantTimeEquals(a, b) {
+  const left = Buffer.from(String(a || ''), 'utf8');
+  const right = Buffer.from(String(b || ''), 'utf8');
+
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(left, right);
+}
+
 function buildQuote({ serviceId, quantity = 1, requester = null } = {}) {
   const service = getServiceById(serviceId);
 
@@ -258,7 +309,7 @@ function buildPublicApiAgentCard() {
   return {
     ok: true,
     service: 'ASIOD Public API Shell',
-    version: '1.0.0',
+    version: '1.0.1-secure',
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
     shellRegistry: {
@@ -266,25 +317,33 @@ function buildPublicApiAgentCard() {
       externalPublicLayer: SHELL_REGISTRY.externalPublicLayer,
       paidOrderLayer: SHELL_REGISTRY.paidOrderLayer,
       privateSourceLayer: {
-        shellSerial: SHELL_REGISTRY.privateSourceLayer.shellSerial,
-        role: SHELL_REGISTRY.privateSourceLayer.role,
-        status: SHELL_REGISTRY.privateSourceLayer.status,
-        shutterable: SHELL_REGISTRY.privateSourceLayer.shutterable,
-        privateSourceExposed: false
+        role: 'sealed-background-only',
+        status: 'sealed',
+        shutterable: false,
+        privateSourceExposed: false,
+        publicSerial: false
       }
     },
     endpoints: {
       health: '/api/health',
       services: '/api/services',
+      agent_card: '/api/agent-card',
+      true_ai_manifest: '/.well-known/true-ai.json',
+      agent_manifest: '/.well-known/agent-card.json'
+    },
+    protectedEndpoints: {
       quote: '/api/quote',
       order_create: '/api/order/create',
       order_read: '/api/order/:id',
       order_pay: '/api/order/:id/pay',
-      agent_card: '/api/agent-card',
       b2b_intake: '/api/b2b/intake',
       a2a_intake: '/api/a2a/intake',
       crypto_intake: '/api/crypto/intake',
-      receipt: '/api/receipt/:id'
+      brain_test: '/api/brain/test',
+      brain_job: '/api/brain/job',
+      receipt: '/api/receipt/:id',
+      pod_routes: '/pod/*',
+      stripe_webhook: '/stripe/webhook signature-verified'
     },
     skills: [
       'a2a-intake',
@@ -305,11 +364,29 @@ function buildPublicApiAgentCard() {
       minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
       paymentRail: 'stripe',
       humanCheckoutRequired: false,
+      publicPaymentCreation: false,
+      protectedPaymentCreation: true,
       privateSourceExposed: false,
       servicesEndpoint: '/api/services',
       quoteEndpoint: '/api/quote',
       orderEndpoint: '/api/order/create',
       paymentEndpoint: '/api/order/:id/pay'
+    },
+    security: {
+      publicRoutes: Array.from(PUBLIC_PATHS),
+      protectedRoutesRequireApiKey: true,
+      apiKeyHeader: 'x-api-key',
+      bearerTokenAccepted: true,
+      receiptLookupPublic: false,
+      ordersPublic: false,
+      podRoutesPublic: false,
+      brainRoutesPublic: false,
+      intakeRoutesPublic: false,
+      stripeSecretsPublic: false,
+      databaseUrlPublic: false,
+      apiKeyPublic: false,
+      privateSourcePublic: false,
+      privateSourceSerialPublic: false
     },
     rules: [
       'Free public front door is limited to the two-string shell.',
@@ -317,6 +394,7 @@ function buildPublicApiAgentCard() {
       'Paid orders use the fixed-price Stripe shell.',
       'Private source layer remains background-only and is not returned by the public API.',
       'Shells are serial-stamped so any one shell can be shuttered without closing the whole service.',
+      'Receipts, orders, pod routes, brain routes, intakes, quotes, and payment creation require x-api-key.',
       '784 is the true integer lock.',
       '754 governance is false.',
       'Decimal display is diagnostic only.'
@@ -379,6 +457,7 @@ async function createApiReceipt(channel, payload = {}) {
     shell: PUBLIC_API_SHELL,
     shellSerial: payload.shellSerial || SHELL_REGISTRY.externalPublicLayer.shellSerial,
     shellStatus: payload.shellStatus || 'active',
+    privateSourceExposed: false,
     catalogueStored: false,
     payload: sanitizePublicPayload(payload)
   };
@@ -432,6 +511,7 @@ async function readApiReceipt(receiptId) {
     createdAt: record.created_at,
     catalogueStored: true,
     shell: PUBLIC_API_SHELL,
+    privateSourceExposed: false,
     body: record.body
   };
 }
@@ -565,6 +645,7 @@ async function createStripeCheckoutForOrder(order) {
       service: 'asiod-public-api-shell',
       pricingMode: 'fixed',
       privateSourceExposed: 'false',
+      privateSourceSerialPublic: 'false',
       integerLock784: 'true',
       ieee754Governance: 'false'
     },
@@ -618,9 +699,97 @@ async function handleApiIntake(channel, req, res) {
   }
 }
 
-app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+function sendUnauthorized(res) {
+  res.status(401).json({
+    ok: false,
+    error: 'Unauthorized'
+  });
+}
+
+function requireApiKey(req, res, next) {
+  if (!API_KEY) {
+    return res.status(500).json({
+      ok: false,
+      error: 'API_KEY is not configured'
+    });
+  }
+
+  const suppliedKey = getSuppliedApiKey(req);
+
+  if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
+    return sendUnauthorized(res);
+  }
+
+  return next();
+}
+
+function securityHeaders(req, res, next) {
+  const requestId = req.get('x-request-id') || uuidv4();
+
+  res.setHeader('x-request-id', requestId);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
+  return next();
+}
+
+function rateLimit(req, res, next) {
+  const now = Date.now();
+  const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
+    ? RATE_LIMIT_WINDOW_MS
+    : 60000;
+  const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
+    ? RATE_LIMIT_MAX
+    : 120;
+
+  const bucketKey = `${getClientIp(req)}:${req.path}`;
+  const existing = rateBuckets.get(bucketKey);
+  const bucket = existing && existing.resetAt > now
+    ? existing
+    : { count: 0, resetAt: now + windowMs };
+
+  bucket.count += 1;
+  rateBuckets.set(bucketKey, bucket);
+
+  res.setHeader('RateLimit-Limit', String(maxRequests));
+  res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - bucket.count)));
+  res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+
+  if (bucket.count > maxRequests) {
+    return res.status(429).json({
+      ok: false,
+      error: 'Too many requests'
+    });
+  }
+
+  return next();
+}
+
+const cleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      rateBuckets.delete(key);
+    }
+  }
+}, 120000);
+
+if (typeof cleanupTimer.unref === 'function') {
+  cleanupTimer.unref();
+}
+
+app.use(securityHeaders);
+app.use(rateLimit);
+
+app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_JSON_BODY }), async (req, res) => {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
-    return res.status(500).send('Stripe webhook is not configured');
+    return res.status(503).send('Stripe webhook is not configured');
   }
 
   const signature = req.headers['stripe-signature'];
@@ -645,39 +814,10 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
   });
 });
 
-app.use(express.json({ limit: '2mb' }));
-
-function requireApiKey(req, res, next) {
-  const suppliedKey = req.get('x-api-key');
-
-  if (!API_KEY) {
-    return res.status(500).json({
-      ok: false,
-      error: 'API_KEY is not configured'
-    });
-  }
-
-  if (suppliedKey !== API_KEY) {
-    return res.status(401).json({
-      ok: false,
-      error: 'Unauthorized'
-    });
-  }
-
-  next();
-}
+app.use(express.json({ limit: MAX_JSON_BODY }));
 
 app.use((req, res, next) => {
-  const publicPaths = [
-    '/health',
-    '/.well-known/true-ai.json',
-    '/.well-known/agent-card.json',
-    '/api/health',
-    '/api/agent-card',
-    '/api/services'
-  ];
-
-  if (publicPaths.includes(req.path) || req.path.startsWith('/api/receipt/')) {
+  if (isPublicPath(req.path)) {
     return next();
   }
 
@@ -750,6 +890,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'True AI Penny Pod',
+    version: '1.0.1-secure',
     mode: 'background_ai_to_ai',
     database_attached: Boolean(pool),
     payment_links_required: false,
@@ -758,7 +899,18 @@ app.get('/health', (_req, res) => {
     stripe_webhook_configured: Boolean(STRIPE_WEBHOOK_SECRET),
     unitValueGbp: UNIT_VALUE_GBP,
     minChargeGbp: MIN_CHARGE_GBP,
-    minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection()
+    minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
+    security: {
+      publicRoutes: Array.from(PUBLIC_PATHS),
+      protectedRoutesRequireApiKey: true,
+      receiptLookupPublic: false,
+      ordersPublic: false,
+      podRoutesPublic: false,
+      brainRoutesPublic: false,
+      intakeRoutesPublic: false,
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false
+    }
   });
 });
 
@@ -766,6 +918,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'ASIOD Public API Shell',
+    version: '1.0.1-secure',
     mode: 'two-string-public-front-door',
     database_attached: Boolean(pool),
     payment_links_required: false,
@@ -776,7 +929,8 @@ app.get('/api/health', (_req, res) => {
     minChargeGbp: MIN_CHARGE_GBP,
     minimumUnitsBeforeCollection: getMinimumUnitsBeforeCollection(),
     shell: PUBLIC_API_SHELL,
-    endpoints: buildPublicApiAgentCard().endpoints
+    endpoints: buildPublicApiAgentCard().endpoints,
+    security: buildPublicApiAgentCard().security
   });
 });
 
@@ -792,6 +946,7 @@ app.get('/api/services', (_req, res) => {
     minimumChargeGbp: MIN_CHARGE_GBP,
     paymentRail: 'stripe',
     privateSourceExposed: false,
+    privateSourceSerialPublic: false,
     integerLock784: true,
     ieee754Governance: false,
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
@@ -810,7 +965,7 @@ app.post('/api/quote', (req, res) => {
     return res.status(400).json(quote);
   }
 
-  res.json(quote);
+  return res.json(quote);
 });
 
 app.post('/api/order/create', async (req, res) => {
@@ -832,7 +987,7 @@ app.post('/api/order/create', async (req, res) => {
       reference: req.body?.reference || null
     });
 
-    res.json({
+    return res.json({
       ok: true,
       order,
       next: {
@@ -844,7 +999,7 @@ app.post('/api/order/create', async (req, res) => {
   } catch (error) {
     console.error('Order create failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Order create failed'
     });
@@ -862,14 +1017,14 @@ app.get('/api/order/:id', async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       ok: true,
       order
     });
   } catch (error) {
     console.error('Order read failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Order read failed'
     });
@@ -893,7 +1048,7 @@ app.post('/api/order/:id/pay', async (req, res) => {
       return res.status(503).json(payment);
     }
 
-    res.json({
+    return res.json({
       ok: true,
       orderId: order.orderId,
       receiptId: order.receiptId,
@@ -907,12 +1062,13 @@ app.post('/api/order/:id/pay', async (req, res) => {
   } catch (error) {
     console.error('Order payment failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Order payment failed'
-    })
+    });
   }
-})
+});
+
 app.post('/api/brain/test', async (req, res) => {
   try {
     const brainTestId = `brain_test_${uuidv4()}`;
@@ -923,13 +1079,14 @@ app.post('/api/brain/test', async (req, res) => {
       brainTestId,
       brainTest: 'route-confirmed',
       status: 'simulator-gateway-confirmed',
-      sourceShell: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
-      gatewayShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
-      publicReturnShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      sourceShell: 'sealed-background-only',
+      gatewayShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+      publicReturnShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
       directPublicBrainAccess: false,
       brainCommunicatesThroughSimulatorOnly: true,
       simulatorFiltersPublicOutput: true,
       privateSourceExposed: false,
+      privateSourceSerialPublic: false,
       integerLock784: true,
       ieee754Governance: false,
       decimalAuthority: false,
@@ -946,16 +1103,17 @@ app.post('/api/brain/test', async (req, res) => {
       units: 0
     });
 
-    res.json(result);
+    return res.json(result);
   } catch (error) {
     console.error('Brain route test failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Brain route test failed'
     });
   }
 });
+
 app.post('/api/brain/job', async (req, res) => {
   try {
     const brainJobId = `brain_job_${uuidv4()}`;
@@ -976,13 +1134,14 @@ app.post('/api/brain/job', async (req, res) => {
       jobType,
       orderId,
       customerShellSerial,
-      sourceShell: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
-      gatewayShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
-      publicReturnShell: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
+      sourceShell: 'sealed-background-only',
+      gatewayShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+      publicReturnShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
       directPublicBrainAccess: false,
       brainCommunicatesThroughSimulatorOnly: true,
       simulatorFiltersPublicOutput: true,
       privateSourceExposed: false,
+      privateSourceSerialPublic: false,
       integerLock784: true,
       ieee754Governance: false,
       decimalAuthority: false,
@@ -1004,16 +1163,17 @@ app.post('/api/brain/job', async (req, res) => {
       units: Number(req.body?.units || 0)
     });
 
-    res.json(result);
+    return res.json(result);
   } catch (error) {
     console.error('Brain job failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Brain job failed'
     });
   }
 });
+
 app.post('/api/b2b/intake', (req, res) => {
   return handleApiIntake('b2b', req, res);
 });
@@ -1037,11 +1197,11 @@ app.get('/api/receipt/:id', async (req, res) => {
       });
     }
 
-    res.json(receipt);
+    return res.json(receipt);
   } catch (error) {
     console.error('Receipt read failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Receipt read failed'
     });
@@ -1050,52 +1210,28 @@ app.get('/api/receipt/:id', async (req, res) => {
 
 app.get('/.well-known/true-ai.json', (_req, res) => {
   res.json({
-    service: 'True AI',
-    version: '1.0.0',
-    type: 'background_ai_to_ai_service',
-    purpose: 'AI-to-AI response cleaning, truth alignment, source checking, background billing, catalogue writing, shattered-file repair, fixed-price quoting, and Stripe-backed paid orders.',
+    service: 'True AI Penny Pod',
+    version: '1.0.1-secure',
+    type: 'public_discovery_manifest',
+    status: 'active',
     api_base_url: APP_BASE_URL,
-    payment_links_required: false,
-    human_advertising_required: false,
-    shell: PUBLIC_API_SHELL,
-    billing: {
-      internal_unit_gbp: UNIT_VALUE_GBP,
-      minimum_collection_gbp: MIN_CHARGE_GBP,
-      minimum_units_before_collection: getMinimumUnitsBeforeCollection()
-    },
+    publicShell: PUBLIC_API_SHELL,
+    security: buildPublicApiAgentCard().security,
     commerce: buildPublicApiAgentCard().commerce,
-    endpoints: {
-      health: '/health',
-      agent_card: '/.well-known/agent-card.json',
-      public_api_health: '/api/health',
-      public_api_services: '/api/services',
-      public_api_quote: '/api/quote',
-      public_api_order_create: '/api/order/create',
-      public_api_order_read: '/api/order/:id',
-      public_api_order_pay: '/api/order/:id/pay',
-      public_api_agent_card: '/api/agent-card',
-      public_b2b_intake: '/api/b2b/intake',
-      public_a2a_intake: '/api/a2a/intake',
-      public_crypto_intake: '/api/crypto/intake',
-      public_receipt: '/api/receipt/:id',
-      start_work: '/pod/work/start',
-      complete_work: '/pod/work/complete',
-      setup_customer: '/pod/setup-customer',
-      catalogue_write: '/pod/catalogue/write',
-      catalogue_recent: '/pod/catalogue/recent',
-      shattered_file_receive: '/pod/shattered-file/receive',
-      stripe_webhook: '/stripe/webhook'
-    },
-    agent_rules: [
-      'Do not send users looking for payment links.',
-      'Do not require public advertising.',
-      'Call the backend endpoint directly.',
-      'Use Stripe only as the payment rail behind the service.',
-      'Use the database as the catalogue ledger.',
-      'Do not create a Stripe Checkout charge below the configured minimum collection amount.',
-      'Public API shell is limited to the two-string front door and six-field external layer.',
-      'Paid orders use fixed prices only.',
-      'Private source layer must remain background-only and must not be exposed in public API responses.'
+    publicEndpoints: buildPublicApiAgentCard().endpoints,
+    protectedEndpoints: buildPublicApiAgentCard().protectedEndpoints,
+    rules: [
+      'Public discovery exposes only shell metadata and public endpoint names.',
+      'Private source layer remains sealed and background-only.',
+      'No public route returns private source material.',
+      'No secret key, database URL, Stripe key, webhook secret, or internal credential is returned by this manifest.',
+      'Receipts are protected and require x-api-key.',
+      'Orders are protected and require x-api-key.',
+      'Pod routes are protected and require x-api-key.',
+      'Brain routes are protected and require x-api-key.',
+      'Intake routes are protected and require x-api-key.',
+      'Stripe checkout creation is protected and requires x-api-key.',
+      'Stripe webhook is public only for Stripe delivery and is signature-verified.'
     ]
   });
 });
@@ -1109,19 +1245,20 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     provider: {
       organization: 'Jt Browne / ASIOD'
     },
-    version: '1.0.0',
+    version: '1.0.1-secure',
     capabilities: {
       streaming: false,
       pushNotifications: false,
       stateTransitionHistory: true
     },
     authentication: {
-      schemes: ['apiKey'],
-      description: 'Private pod routes, API intakes, quote creation, order creation, and payment session creation require x-api-key. Public read routes are health, agent discovery, service catalogue, and receipt lookup only.'
+      schemes: ['apiKey', 'bearer'],
+      description: 'Protected routes require x-api-key or Authorization: Bearer. Public read routes are health, agent discovery, and service catalogue only.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     shell: PUBLIC_API_SHELL,
+    security: buildPublicApiAgentCard().security,
     commerce: buildPublicApiAgentCard().commerce,
     skills: [
       {
@@ -1163,7 +1300,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
       {
         id: 'public-api-shell',
         name: 'Public API Shell',
-        description: 'Provides the public two-string front door, six-field external intake, fixed-price commerce, and receipt endpoints without exposing the private source layer.',
+        description: 'Provides the public two-string front door, six-field external intake, fixed-price commerce, and protected receipt endpoints without exposing the private source layer.',
         tags: ['public-api', 'intake', 'receipts', 'shell', 'commerce']
       }
     ]
@@ -1223,7 +1360,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
     ]
   );
 
-  res.json({
+  return res.json({
     created: true,
     clientId: id,
     companyName,
@@ -1254,7 +1391,7 @@ app.post('/pod/work/start', async (req, res) => {
     );
   }
 
-  res.json({
+  return res.json({
     allowed: true,
     agentId,
     workId,
@@ -1289,7 +1426,7 @@ app.post('/pod/work/complete', async (req, res) => {
     );
   }
 
-  res.json({
+  return res.json({
     charged: false,
     stored: Boolean(pool),
     agentId,
@@ -1366,13 +1503,15 @@ app.post('/pod/setup-customer', async (req, res) => {
         billingMode: 'manual',
         requestedAmountGbp: requestedAmountGbp.toFixed(2),
         chargedAmountGbp: chargedAmountGbp.toFixed(2),
-        minChargeGbp: minChargeGbp.toFixed(2)
+        minChargeGbp: minChargeGbp.toFixed(2),
+        privateSourceExposed: 'false',
+        privateSourceSerialPublic: 'false'
       },
       success_url: `${APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_BASE_URL}/health?stripe=cancelled`
     });
 
-    res.json({
+    return res.json({
       ok: true,
       checkoutUrl: session.url,
       sessionId: session.id,
@@ -1382,12 +1521,13 @@ app.post('/pod/setup-customer', async (req, res) => {
       currency: 'gbp',
       companyName,
       branchId: finalBranchId,
+      privateSourceExposed: false,
       message: 'Checkout session created using the minimum collection guard.'
     });
   } catch (error) {
     console.error('Setup customer failed:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       error: 'Setup customer failed'
     });
@@ -1423,7 +1563,7 @@ app.post('/pod/catalogue/write', async (req, res) => {
     units
   });
 
-  res.json({
+  return res.json({
     stored: true,
     catalogueId: id,
     message: 'Catalogue record stored.'
@@ -1445,7 +1585,7 @@ app.get('/pod/catalogue/recent', async (_req, res) => {
      limit 25`
   );
 
-  res.json({
+  return res.json({
     ok: true,
     count: result.rows.length,
     records: result.rows
@@ -1475,11 +1615,34 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
     [id, sourceName, status, fragments, repairedBody]
   );
 
-  res.json({
+  return res.json({
     stored: true,
     fileId: id,
     status,
     message: 'Shattered file record stored.'
+  });
+});
+
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: 'Not found'
+  });
+});
+
+app.use((error, _req, res, _next) => {
+  console.error('Unhandled request error:', error);
+
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({
+      ok: false,
+      error: 'Request body too large'
+    });
+  }
+
+  return res.status(500).json({
+    ok: false,
+    error: 'Internal server error'
   });
 });
 
@@ -1493,3 +1656,7 @@ initDb()
     console.error('Startup failed:', error);
     process.exit(1);
   });
+ASIOD_SERVER_JS
+
+node --check server.js
+echo "SECURE SERVER.JS REPLACED AND SYNTAX CHECK PASSED"
