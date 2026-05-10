@@ -1,9 +1,14 @@
 import 'dotenv/config';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -97,7 +102,8 @@ const PUBLIC_API_SHELL = Object.freeze({
 });
 
 const PUBLIC_PATHS = Object.freeze(new Set([
-  '/health'
+  '/health',
+  '/'
 ]));
 
 const SERVICE_CATALOGUE = Object.freeze([
@@ -792,6 +798,9 @@ if (typeof cleanupTimer.unref === 'function') {
 
 app.use(securityHeaders);
 app.use(rateLimit);
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_JSON_BODY }), async (req, res) => {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
