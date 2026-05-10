@@ -705,7 +705,7 @@ async function handleApiIntake(channel, req, res) {
 }
 
 function sendUnauthorized(res) {
-  return res.status(403).json({
+  return res.status(404).json({
     ok: false,
     error: 'Unauthorized'
   });
