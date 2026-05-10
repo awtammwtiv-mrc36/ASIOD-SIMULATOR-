@@ -38,7 +38,7 @@ const SHELL_REGISTRY = Object.freeze({
     shellSerial: 'ASIOD-SHELL-001-FREE-2STR',
     role: 'free-two-string-front-door',
     status: 'active',
-    shutterable: true,
+    shatterable: true,
     percentageOut: null,
     privateSourceExposed: false
   },
@@ -46,7 +46,7 @@ const SHELL_REGISTRY = Object.freeze({
     shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
     role: 'public-six-field-external-shell',
     status: 'active',
-    shutterable: true,
+    shatterable: true,
     percentageOut: null,
     privateSourceExposed: false
   },
@@ -54,7 +54,7 @@ const SHELL_REGISTRY = Object.freeze({
     shellSerial: 'ASIOD-SHELL-003-PAID-ORDER',
     role: 'paid-order-and-stripe-shell',
     status: 'active',
-    shutterable: true,
+    shatterable: true,
     percentageOut: null,
     privateSourceExposed: false
   },
@@ -62,7 +62,7 @@ const SHELL_REGISTRY = Object.freeze({
     shellSerial: 'ASIOD-SHELL-014-PRIVATE-SOURCE',
     role: 'private-background-source-layer',
     status: 'sealed',
-    shutterable: false,
+    shatterable: false,
     percentageOut: null,
     privateSourceExposed: false
   }
@@ -343,7 +343,9 @@ function buildPublicApiAgentCard() {
     },
     skills: [
       'a2a-intake',
+      'a2b-intake',
       'b2b-intake',
+      'b2a-intake',
       'crypto-intake',
       'quote-service',
       'create-paid-order',
@@ -1186,6 +1188,14 @@ app.post('/api/a2a/intake', (req, res) => {
   return handleApiIntake('a2a', req, res);
 });
 
+app.post('/api/a2b/intake', (req, res) => {
+  return handleApiIntake('a2b', req, res);
+});
+
+app.post('/api/b2a/intake', (req, res) => {
+  return handleApiIntake('b2a', req, res);
+});
+
 app.post('/api/crypto/intake', (req, res) => {
   return handleApiIntake('crypto', req, res);
 });
@@ -1460,7 +1470,7 @@ app.post('/pod/setup-customer', async (req, res) => {
       amountGbp = null
     } = req.body || {};
 
-    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 3);
+    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 30);
     const requestedAmountGbp = amountGbp === null
       ? minChargeGbp
       : toMoneyNumber(amountGbp, NaN);
