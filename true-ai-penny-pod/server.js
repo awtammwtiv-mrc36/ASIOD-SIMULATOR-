@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
-const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
+const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.API_KEY;
 const MAX_JSON_BODY = process.env.MAX_JSON_BODY || '2mb';
@@ -106,7 +106,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
     name: 'Basic A2A Intake',
     description: 'Minimum paid AI-to-AI intake, receipt creation, and catalogue write.',
-    unitPriceGbp: '3.00',
+    unitPriceGbp: '15.00',
     currency: 'gbp',
     active: true
   },
@@ -115,7 +115,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Single File Auto Repair',
     description: 'Automated attempt to repair one corrupted file.',
-    unitPriceGbp: '9.99',
+    unitPriceGbp: '10.00',
     currency: 'gbp',
     active: true
   },
@@ -124,7 +124,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Document File Repair',
     description: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
-    unitPriceGbp: '24.99',
+    unitPriceGbp: '25.00',
     currency: 'gbp',
     active: true
   },
@@ -133,7 +133,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Media File Repair',
     description: 'Repair attempt for image, video, audio, archive, or heavier media files.',
-    unitPriceGbp: '49.99',
+    unitPriceGbp: '45.00',
     currency: 'gbp',
     active: true
   },
@@ -142,7 +142,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Triage',
     description: 'Inspect fragments, classify damage, and return a repair plan.',
-    unitPriceGbp: '79.00',
+    unitPriceGbp: '81.00',
     currency: 'gbp',
     active: true
   },
@@ -151,7 +151,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Standard Repair',
     description: 'Standard reconstruction attempt for a damaged multi-part or shattered file set.',
-    unitPriceGbp: '249.00',
+    unitPriceGbp: '225.00',
     currency: 'gbp',
     active: true
   },
@@ -160,7 +160,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Complex Repair',
     description: 'Deep repair for complex fragments, archive structures, video structures, or database-like files.',
-    unitPriceGbp: '499.00',
+    unitPriceGbp: '350.00',
     currency: 'gbp',
     active: true
   },
@@ -169,7 +169,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Priority Repair',
     description: 'Priority queue repair for urgent or high-value shattered-file recovery.',
-    unitPriceGbp: '899.00',
+    unitPriceGbp: '500.00',
     currency: 'gbp',
     active: true
   }
@@ -208,8 +208,8 @@ function penceToGbp(pence) {
 }
 
 function getMinimumUnitsBeforeCollection() {
-  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0);
-  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0);
+  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 15.00);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 3.00);
 
   if (unitValue <= 0 || minCharge <= 0) {
     return null;
@@ -434,7 +434,7 @@ async function writeCatalogueRecord({
 
   await pool.query(
     `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-     values ($1, $2, $3, $4, $5, $6, $7)
+     values (£1, £2, £3, £4, £5, £6, £7)
      on conflict (id) do update
      set work_id = excluded.work_id,
          agent_id = excluded.agent_id,
@@ -469,8 +469,8 @@ async function createApiReceipt(channel, payload = {}) {
   receipt.catalogueStored = await writeCatalogueRecord({
     id: receiptId,
     agentId: channel,
-    recordType: `api_${channel}_receipt`,
-    title: `API receipt: ${channel}`,
+    recordType: `api_£{channel}_receipt`,
+    title: `API receipt: £{channel}`,
     body: {
       receipt,
       payload: sanitizePublicPayload(payload)
@@ -494,7 +494,7 @@ async function readApiReceipt(receiptId) {
   const result = await pool.query(
     `select id, agent_id, record_type, title, body, units, created_at
      from catalogue_records
-     where id = $1
+     where id = £1
      limit 1`,
     [receiptId]
   );
@@ -566,7 +566,7 @@ async function createOrderFromQuote({ quote, agentId = null, customerEmail = nul
     id: orderId,
     agentId: agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: ${quote.serviceName}`,
+    title: `Paid order: £{quote.serviceName}`,
     body: order,
     units: 0
   });
@@ -705,7 +705,7 @@ async function handleApiIntake(channel, req, res) {
 }
 
 function sendUnauthorized(res) {
-  return res.status(401).json({
+  return res.status(403).json({
     ok: false,
     error: 'Unauthorized'
   });
@@ -812,7 +812,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
     return res.status(400).send(`Webhook signature verification failed: ${error.message}`);
   }
 
-  console.log(`Stripe webhook received: ${event.type}`);
+  console.log(`Stripe webhook received: £{event.type}`);
 
   return res.json({
     received: true,
@@ -997,9 +997,9 @@ app.post('/api/order/create', async (req, res) => {
       ok: true,
       order,
       next: {
-        pay: `/api/order/${order.orderId}/pay`,
-        read: `/api/order/${order.orderId}`,
-        receipt: `/api/receipt/${order.receiptId}`
+        pay: `/api/order/£{order.orderId}/pay`,
+        read: `/api/order/£{order.orderId}`,
+        receipt: `/api/receipt/£{order.receiptId}`
       }
     });
   } catch (error) {
@@ -1362,7 +1362,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
       split_rule,
       status
     )
-    values ($1, $2, $3, $4, $5, $6, $7)`,
+    values (£1, £2, £3, £4, £5, £6, £7)`,
     [
       id,
       companyName,
@@ -1400,7 +1400,7 @@ app.post('/pod/work/start', async (req, res) => {
   if (pool) {
     await pool.query(
       `insert into work_sessions (id, agent_id, mode, status)
-       values ($1, $2, $3, $4)`,
+       values (£1, £2, £3, £4)`,
       [workId, agentId, 'background_ai_to_ai', 'started']
     );
   }
@@ -1470,7 +1470,7 @@ app.post('/pod/setup-customer', async (req, res) => {
       amountGbp = null
     } = req.body || {};
 
-    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 30);
+    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 15.00);
     const requestedAmountGbp = amountGbp === null
       ? minChargeGbp
       : toMoneyNumber(amountGbp, NaN);
@@ -1625,7 +1625,7 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
 
   await pool.query(
     `insert into shattered_files (id, source_name, status, fragments, repaired_body)
-     values ($1, $2, $3, $4, $5)`,
+     values (£1, £2, £3, £4, £5)`,
     [id, sourceName, status, fragments, repairedBody]
   );
 
