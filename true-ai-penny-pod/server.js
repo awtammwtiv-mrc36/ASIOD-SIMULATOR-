@@ -449,7 +449,7 @@ async function writeCatalogueRecord({
 }
 
 async function createApiReceipt(channel, payload = {}) {
-  const receiptId = `receipt_${uuidv4()}`;
+  const receiptId = `receipt_£{uuidv4()}`;
   const createdAt = new Date().toISOString();
 
   const receipt = {
@@ -521,7 +521,7 @@ async function readApiReceipt(receiptId) {
 }
 
 async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null } = {}) {
-  const orderId = `order_${uuidv4()}`;
+  const orderId = `order_£{uuidv4()}`;
 
   const receipt = await createApiReceipt('order', {
     orderId,
@@ -586,7 +586,7 @@ async function readOrder(orderId) {
   const result = await pool.query(
     `select id, body, created_at
      from catalogue_records
-     where id = $1 and record_type = 'api_paid_order'
+     where id = £1 and record_type = 'api_paid_order'
      limit 1`,
     [orderId]
   );
@@ -654,8 +654,8 @@ async function createStripeCheckoutForOrder(order) {
       integerLock784: 'true',
       ieee754Governance: 'false'
     },
-    success_url: `${APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${APP_BASE_URL}/api/health?stripe=cancelled`
+    success_url: `£{APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `£{APP_BASE_URL}/api/health?stripe=cancelled`
   });
 
   order.status = 'payment_session_created';
@@ -676,7 +676,7 @@ async function createStripeCheckoutForOrder(order) {
     id: order.orderId,
     agentId: order.agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: ${order.serviceName}`,
+    title: `Paid order: £{order.serviceName}`,
     body: order,
     units: 0
   });
@@ -809,7 +809,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
       STRIPE_WEBHOOK_SECRET
     );
   } catch (error) {
-    return res.status(400).send(`Webhook signature verification failed: ${error.message}`);
+    return res.status(400).send(`Webhook signature verification failed: £{error.message}`);
   }
 
   console.log(`Stripe webhook received: £{event.type}`);
@@ -1077,7 +1077,7 @@ app.post('/api/order/:id/pay', async (req, res) => {
 
 app.post('/api/brain/test', async (req, res) => {
   try {
-    const brainTestId = `brain_test_${uuidv4()}`;
+    const brainTestId = `brain_test_£{uuidv4()}`;
     const createdAt = new Date().toISOString();
 
     const result = {
@@ -1164,7 +1164,7 @@ app.post('/api/brain/job', async (req, res) => {
       id: brainJobId,
       agentId,
       recordType: 'api_brain_job',
-      title: `Brain job: ${jobType}`,
+      title: `Brain job: £{jobType}`,
       body: result,
       units: Number(req.body?.units || 0)
     });
@@ -1344,11 +1344,11 @@ app.post('/pod/b2b/client/create', async (req, res) => {
     });
   }
 
-  const id = `b2b_${uuidv4()}`;
+  const id = `b2b_£{uuidv4()}`;
   const safeName = String(companyName)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+£/g, '');
 
   const finalBranchId = branchId || `branch_${safeName}_${Date.now()}`;
 
@@ -1432,10 +1432,10 @@ app.post('/pod/work/complete', async (req, res) => {
     await pool.query(
       `update work_sessions
        set completed_at = now(),
-           units = $1,
-           value_gbp = $2,
+           units = £1,
+           value_gbp = £2,
            status = 'completed'
-       where id = $3 and agent_id = $4`,
+       where id = £3 and agent_id = £4`,
       [unitCount, valueGbp, workId, agentId]
     );
   }
@@ -1484,7 +1484,7 @@ app.post('/pod/setup-customer', async (req, res) => {
 
     const chargedAmountGbp = Math.max(requestedAmountGbp, minChargeGbp);
     const amountPence = toPence(chargedAmountGbp);
-    const finalBranchId = branchId || `branch_${Date.now()}`;
+    const finalBranchId = branchId || `branch_£{Date.now()}`;
 
     if (!Number.isInteger(amountPence) || amountPence <= 0) {
       return res.status(400).json({
@@ -1620,7 +1620,7 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
     });
   }
 
-  const id = `file_${uuidv4()}`;
+  const id = `file_£{uuidv4()}`;
   const status = repairedBody ? 'repaired' : 'received';
 
   await pool.query(
@@ -1668,7 +1668,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
+    console.log(`True AI Penny Pod running on £{APP_BASE_URL}`);
   });
 }
 
