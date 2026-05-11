@@ -12,6 +12,36 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+app.get('/health', function (req, res) {
+  return res.status(200).json({
+    ok: true,
+    service: 'asiod-true-ai-penny-pod'
+  });
+});
+
+app.get('/api/health', function (req, res) {
+  return res.status(200).json({
+    ok: true,
+    service: 'asiod-true-ai-penny-pod'
+  });
+});
+
+app.get('/favicon.ico', function (req, res) {
+  return res.status(204).end();
+});
+
+app.get('/favicon.png', function (req, res) {
+  return res.status(204).end();
+});
+
+app.use(function (req, res, next) {
+  if (req.method === 'HEAD') {
+    return res.status(204).end();
+  }
+
+  return next();
+});
+
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
