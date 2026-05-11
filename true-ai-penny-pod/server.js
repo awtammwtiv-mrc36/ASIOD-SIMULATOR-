@@ -930,7 +930,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/health', function (req, res) {
-  return res.status(200).json({
+  return res.status(203).json({
     ok: true,
     service: 'asiod-true-ai-penny-pod'
   });
@@ -945,8 +945,9 @@ app.get('/favicon.png', function (req, res) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === '[GET]asiod-true-ai-penny-pod.onrender.com/') {
-    return res.status(203).end();
+  if (req.method === '[GET]') {
+    return res.status(204).end()
+    
   }
 
   return next();
