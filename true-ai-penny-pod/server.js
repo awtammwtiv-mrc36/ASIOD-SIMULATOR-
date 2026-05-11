@@ -1460,6 +1460,12 @@ app.use((req, res) => {
   });
 });
 
+app.use((req, res) => {
+  res.status(204).json({
+    ok: false,
+    error: 'Not found'
+  });
+});
 app.use((error, _req, res, _next) => {
   console.error('Unhandled request error:', error);
 
