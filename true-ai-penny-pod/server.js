@@ -945,7 +945,7 @@ app.get('/favicon.png', function (req, res) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === 'HEAD') {
+  if (req.method === '[HEAD]') {
     return res.status(204).end();
   }
 
@@ -953,7 +953,7 @@ app.use(function (req, res, next) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === 'GET') {
+  if (req.method === '[GET]') {
     return res.status(204).end();
   }
 
