@@ -12,50 +12,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-app.disable('x-powered-by');
-app.set('trust proxy', 1);
-
-const BLOCKED_IPS = new Set(
-  (process.env.BLOCKED_IPS || '')
-    .split(',')
-    .map(v => v.trim())
-    .filter(Boolean)
-);
-
-const BLOCKED_AGENTS = (
-  process.env.BLOCKED_AGENTS || ''
-)
-  .split(',')
-  .map(v => v.trim().toLowerCase())
-  .filter(Boolean);
-
-function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
-  }
-
-  return req.ip || req.socket?.remoteAddress || 'unknown';
-}
-
-app.use((req, res, next) => {
-  const ip = getClientIp(req);
-  const agent = String(req.headers['user-agent'] || '').toLowerCase();
-
-  if (BLOCKED_IPS.has(ip)) {
-    console.log(`[BLOCKED_IP] ${ip} ${req.method} ${req.originalUrl}`);
-    return res.status(403).send('Forbidden');
-  }
-
-  if (BLOCKED_AGENTS.some(bad => agent.includes(bad))) {
-    console.log(`[BLOCKED_AGENT] ${ip} ${req.method} ${req.originalUrl} ${agent}`);
-    return res.status(403).send('Forbidden');
-  }
-
-  next();
-});
-
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
@@ -941,6 +897,47 @@ async function initDb() {
 
   console.log('Catalogue database ready.');
 }
+
+const BLOCKED_IPS = new Set(
+  (process.env.BLOCKED_IPS || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+);
+
+const BLOCKED_AGENTS = (
+  process.env.BLOCKED_AGENTS || ''
+)
+  .split(',')
+  .map(v => v.trim().toLowerCase())
+  .filter(Boolean);
+
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+
+  if (typeof forwarded === 'string' && forwarded.length > 0) {
+    return forwarded.split(',')[0].trim();
+  }
+
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+app.use((req, res, next) => {
+  const ip = getClientIp(req);
+  const agent = String(req.headers['user-agent'] || '').toLowerCase();
+
+  if (BLOCKED_IPS.has(ip)) {
+    console.log(`[BLOCKED_IP] ${ip} ${req.method} ${req.originalUrl}`);
+    return res.status(403).send('Forbidden');
+  }
+
+  if (BLOCKED_AGENTS.some(bad => agent.includes(bad))) {
+    console.log(`[BLOCKED_AGENT] ${ip} ${req.method} ${req.originalUrl} ${agent}`);
+    return res.status(403).send('Forbidden');
+  }
+
+  next();
+});
 
 app.get('/health', (_req, res) => {
   return res.json({
