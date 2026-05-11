@@ -945,15 +945,15 @@ app.get('/favicon.png', function (req, res) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === '[HEAD]') {
-    return res.status(204).end();
+  if (req.method === '[GET]asiod-true-ai-penny-pod.onrender.com/') {
+    return res.status(203).end();
   }
 
   return next();
 });
 
 app.use(function (req, res, next) {
-  if (req.method === '[GET]') {
+  if (req.method === '[HEAD]') {
     return res.status(203).end();
   }
 
