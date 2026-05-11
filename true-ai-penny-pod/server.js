@@ -12,36 +12,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-app.get('/health', function (req, res) {
-  return res.status(200).json({
-    ok: true,
-    service: 'asiod-true-ai-penny-pod'
-  });
-});
-
-app.get('/api/health', function (req, res) {
-  return res.status(200).json({
-    ok: true,
-    service: 'asiod-true-ai-penny-pod'
-  });
-});
-
-app.get('/favicon.ico', function (req, res) {
-  return res.status(204).end();
-});
-
-app.get('/favicon.png', function (req, res) {
-  return res.status(204).end();
-});
-
-app.use(function (req, res, next) {
-  if (req.method === 'HEAD') {
-    return res.status(204).end();
-  }
-
-  return next();
-});
-
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
@@ -151,7 +121,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Single File Auto Repair',
     description: 'Automated attempt to repair one corrupted file.',
-    unitPriceGbp: '10.00',
+    unitPriceGbp: '15.00',
     currency: 'gbp',
     active: true
   },
@@ -959,6 +929,13 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get('/api/health', function (req, res) {
+  return res.status(200).json({
+    ok: true,
+    service: 'asiod-true-ai-penny-pod'
+  });
+});
+
 app.get('/api/health', (_req, res) => {
   return res.json({
     ok: true,
@@ -1161,7 +1138,7 @@ app.post('/api/brain/test', async (req, res) => {
 
 app.post('/api/brain/job', async (req, res) => {
   try {
-    const brainJobId = `brain_job_${uuidv4()}`;
+    const brainJobId = `brain_job_£{uuidv4()}`;
     const createdAt = new Date().toISOString();
 
     const {
@@ -1664,7 +1641,7 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
 
   await pool.query(
     `insert into shattered_files (id, source_name, status, fragments, repaired_body)
-     values (£1, £2, £3, £4, £5)`,
+     values (£45, £81, £225, £350, £500)`,
     [id, sourceName, status, fragments, repairedBody]
   );
 
