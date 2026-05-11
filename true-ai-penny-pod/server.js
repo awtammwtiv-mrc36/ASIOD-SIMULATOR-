@@ -936,6 +936,22 @@ app.get('/api/health', function (req, res) {
   });
 });
 
+app.get('/favicon.ico', function (req, res) {
+  return res.status(204).end();
+});
+
+app.get('/favicon.png', function (req, res) {
+  return res.status(204).end();
+});
+
+app.use(function (req, res, next) {
+  if (req.method === 'HEAD','GET') {
+    return res.status(204).end();
+  }
+
+  return next();
+});
+
 app.get('/api/health', (_req, res) => {
   return res.json({
     ok: true,
