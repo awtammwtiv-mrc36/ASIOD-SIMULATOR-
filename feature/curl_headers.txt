@@ -1,0 +1,34 @@
+vbnet
+
+Subject: URGENT: Site blocking & abusive interference for asiod-simulator.vercel.app — evidence attached
+
+Account/Zone: <your-account-id> / <your-zone-name>
+Service: asiod-simulator.vercel.app
+
+Summary:
+Since <start-timestamp>, our site has experienced repeated blocking (401/403/404) and coordinated probes that prevent legitimate business traffic. We have collected signed evidence and need immediate assistance.
+
+Impact:
+- Business operations affected: customers cannot access services.
+- Attack pattern: rotating source IPs, GET 200 followed by targeted blocking from multiple directions.
+
+Attached evidence:
+- asiod_incident_evidence_<timestamp>.tar.gz (sha256: <paste-sha256-here>, signed)
+- curl_headers.txt (response headers captured from a non-blocked host)
+- public_audit.log (latest relevant lines)
+
+Requested actions (urgent):
+1) Temporarily allowlist our management IP(s): <your-CIDR-list> so we can access and respond.
+2) Identify the Cloudflare rule(s) or WAF triggers that are applying blocks (provide rule IDs and timestamps).
+3) Provide all Firewall Events for the range <start-timestamp> to <end-timestamp>.
+4) Preserve server-side logs for the range above and confirm export availability for legal review.
+5) If the blocking is not Cloudflare-originated, advise the next provider to contact for escalation.
+
+Contact:
+- Primary: <ops-email>
+- Phone (optional): <phone-number>
+- Legal contact: <legal-email>
+
+Urgency: High — business outage.
+
+Please escalate to an on-call human reviewer and respond within 4 hours. We have signed evidence and are prepared to provide further forensic details.
