@@ -27,3 +27,35 @@ html
   </div>
 </body>
 </html>
+
+git checkout -b deploy-edge-filter-$(date -u +"%Y%m%dT%H%M%SZ")
+# save file as middleware.ts at repo root (or src/middleware.ts)
+git add middleware.ts
+git commit -m "Deploy edge middleware: block legacy tokens and scanner paths"
+git push origin HEAD
+# open PR and merge after review
+
+# language: bash
+# 1. gather logs (adjust paths)
+timestamp=$(date -u +"%Y%m%dT%H%M%SZ")
+mkdir -p /tmp/asiod_evidence_$timestamp
+# copy provider and local logs to folder (example paths)
+cp path/to/vercel_logs.txt /tmp/asiod_evidence_$timestamp/ || true
+cp path/to/render_logs.txt /tmp/asiod_evidence_$timestamp/ || true
+cp public_audit.log /tmp/asiod_evidence_$timestamp/ || true
+
+# 2. capture curl headers (from a remote host not blocked)
+curl -I -v https://asiod-simulator.vercel.app/ 2>&1 | tee /tmp/asiod_evidence_$timestamp/curl_headers.txt
+
+# 3. optional live capture (requires root; 60 seconds)
+sudo timeout 60 tcpdump -i any -w /tmp/asiod_evidence_$timestamp/live_capture.pcap port 80 or port 443 || true
+
+# 4. archive and sign
+cd /tmp
+tar -czf asiod_incident_evidence_${timestamp}.tar.gz asiod_evidence_${timestamp}
+sha256sum asiod_incident_evidence_${timestamp}.tar.gz > asiod_incident_evidence_${timestamp}.sha256
+# Create a detached GPG signature for the sha file (requires your GPG key locally)
+gpg --output asiod_incident_evidence_${timestamp}.sha256.sig --detach-sign asiod_incident_evidence_${timestamp}.sha256
+
+# Output the sha256 so you can paste it into ticket/legal packet
+cat asiod_incident_evidence_${timestamp}.sha256
