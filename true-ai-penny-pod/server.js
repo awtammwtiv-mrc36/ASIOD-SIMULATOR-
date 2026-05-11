@@ -953,7 +953,7 @@ app.use(function (req, res, next) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === '[GET]200') {
+  if (req.method === '[GET] asiod-true-ai-penny-pod.onrender.com/') {
     return res.status(204).end();
   }
 
