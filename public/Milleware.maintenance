@@ -1,0 +1,67 @@
+// language: typescript
+// middleware.ts - Vercel Edge Middleware to block legacy/noise tokens and scanner paths
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+const BLOCK_TOKENS = [
+  'flocq','isabelle','z3','cvc5','ieee-754','binary128','quadruple','__float128',
+  'e','normal','symbolism','fuzzy','legacy'
+];
+
+const SCANNER_PATHS = [
+  '/php','/wp-','/xmlrpc.php','.env','/backup','/tmp','/admin','/shell','/cgi-bin'
+];
+
+// Replace with your ops IP(s) here as strings, or leave empty and manage allowlist in Cloudflare UI
+const BYPASS_IPS = new Set<string>([
+  // '203.0.113.45'
+]);
+
+function getClientIP(req: NextRequest): string {
+  const cfConnecting = req.headers.get('cf-connecting-ip');
+  if (cfConnecting) return cfConnecting;
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return '';
+}
+
+export function middleware(req: NextRequest) {
+  const url = req.nextUrl.clone();
+  const path = url.pathname;
+  const qs = url.search;
+  const ua = (req.headers.get('user-agent') || '').toLowerCase();
+  const referer = (req.headers.get('referer') || '').toLowerCase();
+  const clientIP = getClientIP(req);
+
+  // allow bypass IPs
+  if (BYPASS_IPS.has(clientIP)) return NextResponse.next();
+
+  // permit health & well-known
+  if (path.startsWith('/health') || path.startsWith('/.well-known')) return NextResponse.next();
+
+  // block scanner paths
+  for (const sp of SCANNER_PATHS) {
+    if (path.includes(sp)) {
+      return new NextResponse('Not allowed', { status: 403 });
+    }
+  }
+
+  // block legacy tokens in path, query, UA, or referer
+  const hay = (path + ' ' + qs + ' ' + ua + ' ' + referer).toLowerCase();
+  for (const t of BLOCK_TOKENS) {
+    if (t && hay.includes(t)) {
+      return new NextResponse('Legacy token blocked', { status: 403 });
+    }
+  }
+
+  // let favicon be served normally if present
+  if (path === '/favicon.ico') {
+    return NextResponse.next();
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: '/:path*'
+};
