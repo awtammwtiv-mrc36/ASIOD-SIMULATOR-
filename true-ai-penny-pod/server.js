@@ -10,68 +10,6 @@ import { v4 as uuidv4 } from 'uuid';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.get('/health', function (req, res) {
-  return res.status(200).json({
-    ok: true,
-    service: 'asiod-true-ai-penny-pod'
-  });
-});
-
-app.get('/api/health', function (req, res) {
-  return res.status(200).json({
-    ok: true,
-    service: 'asiod-true-ai-penny-pod'
-  });
-});
-
-app.get('/favicon.ico', function (req, res) {
-  return res.status(204).end();
-});
-
-app.get('/favicon.png', function (req, res) {
-  return res.status(204).end();
-});
-
-app.use(function (req, res, next) {
-  if (req.method === 'HEAD') {
-    return res.status(204).end();
-  }
-
-  return next();
-});
-
-const blockedIps = new Set([
-  '34.82.79.105',
-  '35.222.35.193'
-]);
-
-const blockedAgents = [
-  'CMS-Checker',
-  'weft-search-triage',
-  'Go-http-client'
-];
-
-app.use(function (req, res, next) {
-  const forwardedFor = req.headers['x-forwarded-for'];
-  const ip = String(forwardedFor || req.ip || '')
-    .split(',')[0]
-    .trim();
-
-  const userAgent = String(req.headers['user-agent'] || '').toLowerCase();
-
-  if (blockedIps.has(ip)) {
-    return res.status(404).send('Not found');
-  }
-
-  for (const agent of blockedAgents) {
-    if (userAgent.includes(agent.toLowerCase())) {
-      return res.status(404).send('Not found');
-    }
-  }
-
-  return next();
-});
-
 const app = express();
 
 app.disable('x-powered-by');
