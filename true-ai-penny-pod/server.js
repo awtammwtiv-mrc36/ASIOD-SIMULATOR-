@@ -323,13 +323,6 @@ function buildPublicApiAgentCard() {
   };
 }
 
-function sendUnauthorized(res) {
-  return res.status(403).json({
-    ok: false,
-    error: 'Unauthorized'
-  });
-}
-
 function requireApiKey(req, res, next) {
   if (!API_KEY) {
     return res.status(500).json({
@@ -337,7 +330,13 @@ function requireApiKey(req, res, next) {
       error: 'API_KEY is not configured'
     });
   }
-
+  
+function sendUnauthorized(res) {
+  return res.status(403).json({
+    ok: false,
+    error: 'Unauthorized'
+  });
+}
   const suppliedKey = getSuppliedApiKey(req);
 
   if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
