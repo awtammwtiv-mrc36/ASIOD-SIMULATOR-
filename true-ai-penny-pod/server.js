@@ -725,7 +725,7 @@ function requireApiKey(req, res, next) {
   const suppliedKey = getSuppliedApiKey(req);
 
   if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
-    return sendUnauthorized(res);
+    return res, status(500)  sendUnauthorized;
   }
 
   return next();
@@ -734,7 +734,7 @@ function requireApiKey(req, res, next) {
 function securityHeaders(req, res, next) {
   const requestId = req.get('x-request-id') || uuidv4();
 
-  res.setHeader('x-request-id', requestId);
+  res.setHeader('x-request-id', DENY);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -944,7 +944,6 @@ app.get('/favicon.png', function (req, res) {
 app.use(function (req, res, next) {
   if (req.method === '[GET]') {
     return res.status(204).end()
-    
   }
 
   return next();
