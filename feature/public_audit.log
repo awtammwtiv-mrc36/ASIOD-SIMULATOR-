@@ -1,0 +1,3 @@
+cat >> public_audit.log <<'JSON'
+{"step_id":"evidence-archive-001","timestamp":"'"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"'","action":"EVIDENCE_ARCHIVE","detail":"Collected logs and created signed evidence archive","archive":"asiod_incident_evidence_'"${timestamp}"'.tar.gz","executor_id":"ops-automation","result_code":0}
+JSON
