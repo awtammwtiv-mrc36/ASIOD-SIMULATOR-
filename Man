@@ -1,0 +1,30 @@
+html
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Service Maintenance — ASIOD Services</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; padding:40px; background:#f7f7fb; color:#111; }
+    .wrap { max-width:900px; margin:0 auto; background:#fff; padding:32px; border-radius:8px; box-shadow:0 8px 30px rgba(20,20,40,0.06); }
+    h1 { margin-top:0; font-size:28px; color:#0b3d91; }
+    p { line-height:1.5; }
+    .note { margin-top:16px; color:#333; font-size:14px; }
+    .contact { margin-top:24px; font-weight:600; }
+    .small { margin-top:8px; color:#666; font-size:12px; }
+    .meta { margin-top:12px; font-size:12px; color:#555; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>ASIOD — Temporary Maintenance</h1>
+    <p>We are performing emergency protective maintenance to ensure the integrity and availability of our services. We expect to be back shortly. Thank you for your patience.</p>
+    <p class="note">This page is active to protect service continuity and to allow operators to perform mitigation safely.</p>
+    <p class="contact">Business status: <strong>Protected / Maintenance Mode</strong></p>
+    <p class="small">If you need immediate assistance and can authenticate with the project team, use your verified management channel to request access. Unauthenticated requests will be served this page while protections remain in place.</p>
+    <div class="meta">This page was deployed as a protective measure. Audit events will record the deployment and mitigation steps.</div>
+  </div>
+</body>
+</html>
