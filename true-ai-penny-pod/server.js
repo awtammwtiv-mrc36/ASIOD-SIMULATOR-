@@ -927,7 +927,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/health', function (req, res) {
-  return res.status(203).json({
+  return res.status(200).json({
     ok: true,
     service: 'asiod-true-ai-penny-pod'
   });
