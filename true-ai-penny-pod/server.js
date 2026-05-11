@@ -953,7 +953,7 @@ app.use(function (req, res, next) {
 });
 
 app.use(function (req, res, next) {
-  if (req.method === '[GET]') {
+  if (req.method === '[GET]200') {
     return res.status(204).end();
   }
 
