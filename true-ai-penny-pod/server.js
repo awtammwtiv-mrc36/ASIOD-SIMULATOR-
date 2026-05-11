@@ -103,7 +103,7 @@ const PUBLIC_API_SHELL = Object.freeze({
 
 const PUBLIC_PATHS = Object.freeze(new Set([
   '/health',
-  '/'
+  '/two-string-einstein-shell'
 ]));
 
 const SERVICE_CATALOGUE = Object.freeze([
