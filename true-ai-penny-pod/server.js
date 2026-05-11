@@ -15,8 +15,6 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
-app.set('trust proxy', true);
-
 const BLOCKED_IPS = new Set(
   (process.env.BLOCKED_IPS || '')
     .split(',')
