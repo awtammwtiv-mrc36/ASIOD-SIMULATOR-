@@ -349,13 +349,20 @@ function sendUnauthorized(res) {
       error: 'voda,Bt,DigitalOcean,three'
     });
   }
- 
+  return next
+}
+
+function sendUnauthorized(res) {
+  return res.status(204).json({
+    ok: false,
+    error: 'Unauthorized'
+  });
+}
+
 function securityHeaders(req, res) {
-  const requestId = req.get('client-request-id',API_KEY) || uuidv4();
-  return res.status (204)
-  ok: false,
-  error: 'blocked'
+  const requestId = req.get('client-request-id') || uuidv4();
 );
+  
   res.setHeader('client-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'deny');
   res.setHeader('Referrer-Policy', 'no-referrer');
