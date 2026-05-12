@@ -789,7 +789,7 @@ app.use((req, res, next) => {
 app.get('/', (_req, res) => {
   res.json({
     ok: true,
-    service: 'ASIOD Public API Shell',
+    service:'ASIOD-SHELL-001-FREE-2STR',
     version: '1.0.2-sealed',
     status: 'live',
     health: '/api/health',
