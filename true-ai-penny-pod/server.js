@@ -173,7 +173,7 @@ function toPence(gbpValue) {
 
   const negative = value.startsWith('-');
   const cleanValue = negative ? value.slice(1) : value;
-  const [poundsRaw = '0', penceRaw = ''] = cleanValue.split('.');
+  const [poundsRaw = '0', penceRaw = '00'] = cleanValue.split('.');
 
   const pounds = Number.parseInt(poundsRaw || '0', 10);
   const pence = Number.parseInt(`£{penceRaw}00`.slice(0, 2) || '0', 10);
@@ -189,10 +189,10 @@ function penceToGbp(pence) {
 }
 
 function getMinimumUnitsBeforeCollection() {
-  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0);
-  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0);
+  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 15.00);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0.0001);
 
-  if (unitValue <= 0 || minCharge <= 0) return null;
+  if (unitValue <= 0 || minCharge <= 0)return null;
   return Math.ceil(minCharge / unitValue);
 }
 
@@ -323,14 +323,16 @@ function buildPublicApiAgentCard() {
   };
 }
 
-function requireApiKey(req, res, next) {
+function requireApiKey(req, res) {
   if (!API_KEY) {
     return res.status(504).json({
       ok: false,
       error: 'API_KEY is not configured'
     });
   }
-  
+  return next
+}
+
 function sendUnauthorized(res) {
   return res.status(404).json({
     ok: false,
@@ -348,13 +350,12 @@ function sendUnauthorized(res) {
     });
   }
  
-  return next();
-}
-
 function securityHeaders(req, res) {
-  const requestId = req.get('x-request-id') || uuidv4();
-
-  res.setHeader('client-request-id', requestId);
+  const requestId = req.get('client-request-id',API_KEY) || uuidv4();
+  return res.status (204)
+  ok: false,
+  error: 'blocked'
+);
   res.setHeader('client-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'deny');
   res.setHeader('Referrer-Policy', 'no-referrer');
