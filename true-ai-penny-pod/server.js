@@ -361,7 +361,6 @@ function sendUnauthorized(res) {
 
 function securityHeaders(req, res) {
   const requestId = req.get('client-request-id') || uuidv4();
-);
   
   res.setHeader('client-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'deny');
