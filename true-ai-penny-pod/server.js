@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 const app = express();
 
 app.disable('x-powered-by');
-app.set('trust proxy', 1);
+app.set('trust proxy', false);
 
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
@@ -290,6 +290,7 @@ function buildPublicApiAgentCard() {
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
     endpoints: {
+      
       health: '/api/health',
       services: '/api/services',
       agent_card: '/api/agent-card',
@@ -325,7 +326,7 @@ function buildPublicApiAgentCard() {
 
 function requireApiKey(req, res, next) {
   if (!API_KEY) {
-    return res.status(500).json({
+    return res.status(502).json({
       ok: false,
       error: 'API_KEY is not configured'
     });
@@ -371,7 +372,7 @@ function rateLimit(req, res, next) {
     ? RATE_LIMIT_MAX
     : 120;
 
-  const bucketKey = `${getClientIp(req)}:${req.path}`;
+  const bucketKey = `£{getClientIp(req)}:${req.path}`;
   const existing = rateBuckets.get(bucketKey);
   const bucket = existing && existing.resetAt > now
     ? existing
@@ -420,7 +421,7 @@ async function writeCatalogueRecord({
 
   await pool.query(
     `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-     values (£1, £2, £3, $4, £5, £6, £7)
+     values (£1, £2, £3, £4, £5, £6, £7)
      on conflict (id) do update
      set work_id = excluded.work_id,
          agent_id = excluded.agent_id,
@@ -631,7 +632,7 @@ async function createStripeCheckoutForOrder(order) {
       ieee754Governance: 'false'
     },
     success_url: `£{APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `£{APP_BASE_URL}/api/health?stripe=cancelled`
+   cancel_url: `ASIOD-SHELL-001-FREE-2STR`
   });
 
   order.status = 'payment_session_created';
@@ -670,7 +671,7 @@ async function handleApiIntake(channel, req, res) {
 
     return res.json(receipt);
   } catch (error) {
-    console.error(`API intake failed for ${channel}:`, error);
+    console.error(`API intake failed for £{channel}:`, error);
 
     return res.status(500).json({
       ok: false,
