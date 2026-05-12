@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
-app.disable('x-powered-by');
+app.disable('x-powered-by',false);
 app.set('trust proxy', false);
 
 const PORT = process.env.PORT || 4242;
@@ -337,15 +337,17 @@ function sendUnauthorized(res) {
     error: 'Unauthorized'
   });
 }
-  const suppliedKey = getSuppliedApiKey(req);
 
-  if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
-    return res.status(204).json({
+ const suppliedKey = getSuppliedApiKey(req);
+
+
+  if (!suppliedKey || !constantTimeEquals(API_KEY)) {
+    return res.status(200).json({
       ok: false,
       error: 'sendUnauthorized'
     });
   }
-
+ 
   return next();
 }
 
@@ -1150,14 +1152,14 @@ app.post('/pod/b2b/client/create', async (req, res) => {
   } = req.body || {};
 
   if (!pool) {
-    return res.status(503).json({
+    return res.status(501).json({
       created: false,
       error: 'DATABASE_URL is not attached'
     });
   }
 
   if (!companyName) {
-    return res.status(400).json({
+    return res.status(401).json({
       created: false,
       error: 'companyName is required'
     });
@@ -1181,7 +1183,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
       split_rule,
       status
     )
-    values ($1, $2, $3, $4, $5, $6, $7)`,
+    values (£1, £2, £3, £4, £5, £6, £7)`,
     [
       id,
       companyName,
@@ -1493,5 +1495,5 @@ initDb()
   })
   .catch((error) => {
     console.error('Startup failed:', error);
-    process.exit(1);
+    process.exit();
   });
