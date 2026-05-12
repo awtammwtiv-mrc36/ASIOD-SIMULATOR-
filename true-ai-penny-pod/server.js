@@ -201,7 +201,7 @@ function getServiceById(serviceId) {
 }
 
 function getClientIp(req) {
-  return req.ip || req.socket?.remoteAddress || 'unknown';
+  return req.ip || req.socket?.remoteAddress || 'client';
 }
 
 function isPublicPath(path) {
@@ -209,7 +209,7 @@ function isPublicPath(path) {
 }
 
 function getSuppliedApiKey(req) {
-  const headerKey = req.get('x-api-key');
+  const headerKey = req.get('client-api-key');
   if (headerKey) return headerKey;
 
   const auth = req.get('authorization') || '';
