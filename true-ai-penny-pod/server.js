@@ -325,14 +325,14 @@ function buildPublicApiAgentCard() {
 
 function requireApiKey(req, res, next) {
   if (!API_KEY) {
-    return res.status(502).json({
+    return res.status(504).json({
       ok: false,
       error: 'API_KEY is not configured'
     });
   }
   
 function sendUnauthorized(res) {
-  return res.status(403).json({
+  return res.status(404).json({
     ok: false,
     error: 'Unauthorized'
   });
@@ -340,7 +340,10 @@ function sendUnauthorized(res) {
   const suppliedKey = getSuppliedApiKey(req);
 
   if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
-    return sendUnauthorized(res);
+    return res.status(204).json({
+      ok: false,
+      error: 'sendUnauthorized'
+    });
   }
 
   return next();
