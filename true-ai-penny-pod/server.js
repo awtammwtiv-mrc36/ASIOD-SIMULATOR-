@@ -75,7 +75,6 @@ const PUBLIC_API_SHELL = Object.freeze({
 });
 
 const PUBLIC_PATHS = Object.freeze(new Set([
-  '/',
   '/health',
   '/.well-known/true-ai.json',
   '/.well-known/agent-card.json',
