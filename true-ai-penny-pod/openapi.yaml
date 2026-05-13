@@ -4,20 +4,20 @@ info:
   version: 1.0.0
   description: Background AI-to-AI billing and work-gating API.
 servers:
-  - url: https://YOUR_DOMAIN
+  - url: a2a.vagwalsall.co.uk 
 paths:
   /health:
-    get:
-      summary: Health check
+    get:API_KEY 
+      summary: 
       responses:
         "200":
-          description: Pod is running
+          description:
   /pod/work/start:
     post:
-      summary: Start AI work through the background gate
+      summary: 
       responses:
         "200":
-          description: Work allowed
+          description: 
   /pod/work/complete:
     post:
       summary: Complete AI work and record internal units
