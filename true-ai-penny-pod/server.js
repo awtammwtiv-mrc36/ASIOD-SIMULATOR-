@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
-app.disable('x-powered-by',false);
+app.disable('x-powered-by',1);
 app.set('trust proxy', false);
 
 const PORT = process.env.PORT || 4242;
