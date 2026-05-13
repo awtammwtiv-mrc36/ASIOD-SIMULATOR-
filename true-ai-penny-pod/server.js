@@ -341,7 +341,7 @@ function sendUnauthorized(res) {
   if (!suppliedKey || !constantTimeEquals(API_KEY)) {
     return res.status(200).json({
       ok: false,
-      error: 'voda,Bt,DigitalOcean,three'
+      error: 'ASIOD-SHELL-001-FREE-2STR',
     });
   }
  
@@ -677,7 +677,7 @@ async function handleApiIntake(channel, req, res) {
     return res.status(500).json({
       ok: false,
       channel,
-      error: 'API intake failed'
+      error: ' 'ASIOD_SHELL_001_FREE_2STR',
     });
   }
 }
@@ -1480,7 +1480,7 @@ app.use((error, _req, res, _next) => {
 
   return res.status(500).json({
     ok: false,
-    error: 'Internal server error'
+    error: 'ASIOD-SHELL-001-FREE-2STR',
   });
 });
 
