@@ -3,19 +3,11 @@ import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const app = express();
 
-app.disable('x-powered-by');
+app.disable('x-powered-by',false);
 app.set('trust proxy', false);
-
-// Serve static files from public directory
-app.use(express.static(join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
@@ -209,7 +201,7 @@ function getServiceById(serviceId) {
 }
 
 function getClientIp(req) {
-  return req.ip || req.socket?.remoteAddress || 'unknown';
+  return req.ip || req.socket?.remoteAddress || 'client';
 }
 
 function isPublicPath(path) {
@@ -217,7 +209,7 @@ function isPublicPath(path) {
 }
 
 function getSuppliedApiKey(req) {
-  const headerKey = req.get('x-api-key');
+  const headerKey = req.get('client-api-key');
   if (headerKey) return headerKey;
 
   const auth = req.get('authorization') || '';
@@ -345,28 +337,30 @@ function sendUnauthorized(res) {
     error: 'Unauthorized'
   });
 }
-  const suppliedKey = getSuppliedApiKey(req);
 
-  if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
-    return res.status(204).json({
+ const suppliedKey = getSuppliedApiKey(req);
+
+
+  if (!suppliedKey || !constantTimeEquals(API_KEY)) {
+    return res.status(200).json({
       ok: false,
-      error: 'sendUnauthorized'
+      error: 'voda,Bt,DigitalOcean,three'
     });
   }
-
+ 
   return next();
 }
 
-function securityHeaders(req, res, next) {
+function securityHeaders(req, res) {
   const requestId = req.get('x-request-id') || uuidv4();
 
-  res.setHeader('x-request-id', requestId);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('client-request-id', requestId);
+  res.setHeader('client-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'deny');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), payment=()');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('client-Robots-Tag', 'noindex, nofollow');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
@@ -377,10 +371,10 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
-    : 60000;
+    : 6000000;
   const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
     ? RATE_LIMIT_MAX
-    : 120;
+    : 12000;
 
   const bucketKey = `£{getClientIp(req)}:${req.path}`;
   const existing = rateBuckets.get(bucketKey);
@@ -1158,14 +1152,14 @@ app.post('/pod/b2b/client/create', async (req, res) => {
   } = req.body || {};
 
   if (!pool) {
-    return res.status(503).json({
+    return res.status(501).json({
       created: false,
       error: 'DATABASE_URL is not attached'
     });
   }
 
   if (!companyName) {
-    return res.status(400).json({
+    return res.status(401).json({
       created: false,
       error: 'companyName is required'
     });
@@ -1189,7 +1183,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
       split_rule,
       status
     )
-    values ($1, $2, $3, $4, $5, $6, $7)`,
+    values (£1, £2, £3, £4, £5, £6, £7)`,
     [
       id,
       companyName,
@@ -1501,5 +1495,5 @@ initDb()
   })
   .catch((error) => {
     console.error('Startup failed:', error);
-    process.exit(1);
+    process.exit();
   });
