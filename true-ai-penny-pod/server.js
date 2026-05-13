@@ -6,14 +6,14 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
-app.disable('client-powered-by',false);
-app.set('trust proxy', false);
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
-const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
-const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
+const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.0001';
+const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '3.00';
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.API_KEY;
 const MAX_JSON_BODY = process.env.MAX_JSON_BODY || '2mb';
@@ -36,27 +36,27 @@ const SHELL_REGISTRY = Object.freeze({
     shellSerial: 'ASIOD-SHELL-001-FREE-2STR',
     role: 'free-two-string-front-door',
     status: 'active',
-    satterable: true,
+    shutterable: true,
     privateSourceExposed: false
   },
   externalPublicLayer: {
     shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
     role: 'public-six-field-external-shell',
     status: 'active',
-    shatterable: true,
+    shutterable: true,
     privateSourceExposed: false
   },
   paidOrderLayer: {
     shellSerial: 'ASIOD-SHELL-003-PAID-ORDER',
     role: 'paid-order-and-stripe-shell',
     status: 'active',
-    shatterable: true,
+    shutterable: true,
     privateSourceExposed: false
   },
   privateSourceLayer: {
     role: 'sealed-background-only',
     status: 'sealed',
-    shatterable: false,
+    shutterable: false,
     privateSourceExposed: false,
     publicSerial: false
   }
@@ -92,7 +92,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
     name: 'Basic A2A Intake',
     description: 'Minimum paid AI-to-AI intake, receipt creation, and catalogue write.',
-    unitPriceGbp: '10.00',
+    unitPriceGbp: '3.00',
     currency: 'gbp',
     active: true
   },
@@ -101,7 +101,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Single File Auto Repair',
     description: 'Automated attempt to repair one corrupted file.',
-    unitPriceGbp: '15.00',
+    unitPriceGbp: '9.99',
     currency: 'gbp',
     active: true
   },
@@ -110,7 +110,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Document File Repair',
     description: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
-    unitPriceGbp: '25.00',
+    unitPriceGbp: '24.99',
     currency: 'gbp',
     active: true
   },
@@ -119,7 +119,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Media File Repair',
     description: 'Repair attempt for image, video, audio, archive, or heavier media files.',
-    unitPriceGbp: '45.00',
+    unitPriceGbp: '49.99',
     currency: 'gbp',
     active: true
   },
@@ -128,7 +128,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Triage',
     description: 'Inspect fragments, classify damage, and return a repair plan.',
-    unitPriceGbp: '81.00',
+    unitPriceGbp: '79.00',
     currency: 'gbp',
     active: true
   },
@@ -137,7 +137,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Standard Repair',
     description: 'Standard reconstruction attempt for a damaged multi-part or shattered file set.',
-    unitPriceGbp: '225.00',
+    unitPriceGbp: '249.00',
     currency: 'gbp',
     active: true
   },
@@ -146,7 +146,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Complex Repair',
     description: 'Deep repair for complex fragments, archive structures, video structures, or database-like files.',
-    unitPriceGbp: '350.00',
+    unitPriceGbp: '499.00',
     currency: 'gbp',
     active: true
   },
@@ -155,7 +155,7 @@ const SERVICE_CATALOGUE = Object.freeze([
     shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
     name: 'Shattered File Priority Repair',
     description: 'Priority queue repair for urgent or high-value shattered-file recovery.',
-    unitPriceGbp: '500.00',
+    unitPriceGbp: '899.00',
     currency: 'gbp',
     active: true
   }
@@ -172,10 +172,10 @@ function toPence(gbpValue) {
 
   const negative = value.startsWith('-');
   const cleanValue = negative ? value.slice(1) : value;
-  const [poundsRaw = '0', penceRaw = '00'] = cleanValue.split('.');
+  const [poundsRaw = '0', penceRaw = ''] = cleanValue.split('.');
 
   const pounds = Number.parseInt(poundsRaw || '0', 10);
-  const pence = Number.parseInt(`£{penceRaw}00`.slice(0, 2) || '0', 10);
+  const pence = Number.parseInt(`${penceRaw}00`.slice(0, 2) || '0', 10);
 
   if (!Number.isFinite(pounds) || !Number.isFinite(pence)) return 0;
 
@@ -188,10 +188,10 @@ function penceToGbp(pence) {
 }
 
 function getMinimumUnitsBeforeCollection() {
-  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 15.00);
-  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0.0001);
+  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0);
 
-  if (unitValue <= 0 || minCharge <= 0)return null;
+  if (unitValue <= 0 || minCharge <= 0) return null;
   return Math.ceil(minCharge / unitValue);
 }
 
@@ -200,7 +200,7 @@ function getServiceById(serviceId) {
 }
 
 function getClientIp(req) {
-  return req.ip || req.socket?.remoteAddress || 'client';
+  return req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
 function isPublicPath(path) {
@@ -208,7 +208,7 @@ function isPublicPath(path) {
 }
 
 function getSuppliedApiKey(req) {
-  const headerKey = req.get('client-api-key');
+  const headerKey = req.get('x-api-key');
   if (headerKey) return headerKey;
 
   const auth = req.get('authorization') || '';
@@ -288,7 +288,6 @@ function buildPublicApiAgentCard() {
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
     endpoints: {
-      
       health: '/api/health',
       services: '/api/services',
       agent_card: '/api/agent-card',
@@ -299,7 +298,7 @@ function buildPublicApiAgentCard() {
       publicRoutesLimited: true,
       protectedRoutesRequireApiKey: true,
       apiKeyHeader: 'x-api-key',
-      bearerTokenAccepted: true,
+      bearerTokenAccepted: false,
       receiptLookupPublic: false,
       ordersPublic: false,
       podRoutesPublic: false,
@@ -322,51 +321,40 @@ function buildPublicApiAgentCard() {
   };
 }
 
-function requireApiKey(req, res) {
+function sendUnauthorized(res) {
+  return res.status(401).json({
+    ok: false,
+    error: 'Unauthorized'
+  });
+}
+
+function requireApiKey(req, res){
   if (!API_KEY) {
-    return res.status(504).json({
+    return res.status(500).json({
       ok: false,
       error: 'API_KEY is not configured'
     });
   }
-  return next
-}
 
-function sendUnauthorized(res) {
-  return res.status(404).json({
-    ok: false,
-    error: 'Unauthorized'
-  });
-}
+  const suppliedKey = getSuppliedApiKey(req);
 
- const suppliedKey = getSuppliedApiKey(req);
-
-
-  if (!suppliedKey || !constantTimeEquals(API_KEY)) {
-    return res.status(200).json({
-      ok: false,
-      error: 'voda,Bt,DigitalOcean,three'
-    });
+  if (!suppliedKey || !constantTimeEquals(suppliedKey, API_KEY)) {
+    return sendUnauthorized(res);
   }
-  return next
+
+  return next();
 }
 
-function sendUnauthorized(res) {
-  return res.status(204).json({
-    ok: false,
-    error: 'Unauthorized'
-  });
-}
-
-function securityHeaders(req, res) {
+function securityHeaders(req, res, ) {
   const requestId = req.get('client-request-id') || uuidv4();
-  
+
+  res.setHeader('client-request-id', requestId);
   res.setHeader('client-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'deny');
+  res.setHeader('client-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', 'geolocation=(), payment=()');
+  res.setHeader('Permissions-Policy', geolocation=(), payment=()');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  res.setHeader('client-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('Client-Robots-Tag', 'noindex, nofollow');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
@@ -377,12 +365,12 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
-    : 6000000;
+    : 600000;
   const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
     ? RATE_LIMIT_MAX
-    : 12000;
+    : 1200;
 
-  const bucketKey = `£{getClientIp(req)}:${req.path}`;
+  const bucketKey = `${getClientIp(req)}:${req.path}`;
   const existing = rateBuckets.get(bucketKey);
   const bucket = existing && existing.resetAt > now
     ? existing
@@ -489,7 +477,7 @@ async function readApiReceipt(receiptId) {
   const result = await pool.query(
     `select id, agent_id, record_type, title, body, units, created_at
      from catalogue_records
-     where id = £1
+     where id = $1
      limit 1`,
     [receiptId]
   );
@@ -514,7 +502,7 @@ async function readApiReceipt(receiptId) {
 }
 
 async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null } = {}) {
-  const orderId = `order_£{uuidv4()}`;
+  const orderId = `order_${uuidv4()}`;
   const receipt = await createApiReceipt('order', {
     orderId,
     quoteId: quote.quoteId,
@@ -558,7 +546,7 @@ async function createOrderFromQuote({ quote, agentId = null, customerEmail = nul
     id: orderId,
     agentId: agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: £{quote.serviceName}`,
+    title: `Paid order: ${quote.serviceName}`,
     body: order,
     units: 0
   });
@@ -576,7 +564,7 @@ async function readOrder(orderId) {
   const result = await pool.query(
     `select id, body, created_at
      from catalogue_records
-     where id = £1 and record_type = 'api_paid_order'
+     where id = $1 and record_type = 'api_paid_order'
      limit 1`,
     [orderId]
   );
@@ -642,7 +630,7 @@ async function createStripeCheckoutForOrder(order) {
       ieee754Governance: 'false'
     },
     success_url: `£{APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-   cancel_url: `ASIOD-SHELL-001-FREE-2STR`
+    cancel_url: `${APP_BASE_URL}/api/health?stripe=cancelled`
   });
 
   order.status = 'payment_session_created';
@@ -663,7 +651,7 @@ async function createStripeCheckoutForOrder(order) {
     id: order.orderId,
     agentId: order.agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: £{order.serviceName}`,
+    title: `Paid order: ${order.serviceName}`,
     body: order,
     units: 0
   });
@@ -681,7 +669,7 @@ async function handleApiIntake(channel, req, res) {
 
     return res.json(receipt);
   } catch (error) {
-    console.error(`API intake failed for £{channel}:`, error);
+    console.error(`API intake failed for ${channel}:`, error);
 
     return res.status(500).json({
       ok: false,
@@ -774,7 +762,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
     return res.status(400).send(`Webhook signature verification failed: ${error.message}`);
   }
 
-  console.log(`Stripe webhook received: £{event.type}`);
+  console.log(`Stripe webhook received: ${event.type}`);
 
   return res.json({
     received: true,
@@ -795,7 +783,7 @@ app.use((req, res, next) => {
 app.get('/', (_req, res) => {
   res.json({
     ok: true,
-    service:'ASIOD-SHELL-001-FREE-2STR',
+    service: 'ASIOD Public API Shell',
     version: '1.0.2-sealed',
     status: 'live',
     health: '/api/health',
@@ -891,9 +879,9 @@ app.post('/api/order/create', async (req, res) => {
       ok: true,
       order,
       next: {
-        pay: `/api/order/£{order.orderId}/pay`,
-        read: `/api/order/£{order.orderId}`,
-        receipt: `/api/receipt/£{order.receiptId}`
+        pay: `/api/order/${order.orderId}/pay`,
+        read: `/api/order/${order.orderId}`,
+        receipt: `/api/receipt/${order.receiptId}`
       }
     });
   } catch (error) {
@@ -969,7 +957,7 @@ app.post('/api/order/:id/pay', async (req, res) => {
 
 app.post('/api/brain/test', async (req, res) => {
   try {
-    const brainTestId = `brain_test_£{uuidv4()}`;
+    const brainTestId = `brain_test_${uuidv4()}`;
     const createdAt = new Date().toISOString();
 
     const result = {
@@ -1014,7 +1002,7 @@ app.post('/api/brain/test', async (req, res) => {
 
 app.post('/api/brain/job', async (req, res) => {
   try {
-    const brainJobId = `brain_job_£{uuidv4()}`;
+    const brainJobId = `brain_job_${uuidv4()}`;
     const createdAt = new Date().toISOString();
 
     const {
@@ -1056,7 +1044,7 @@ app.post('/api/brain/job', async (req, res) => {
       id: brainJobId,
       agentId,
       recordType: 'api_brain_job',
-      title: `Brain job: £{jobType}`,
+      title: `Brain job: ${jobType}`,
       body: result,
       units: Number(req.body?.units || 0)
     });
@@ -1127,7 +1115,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, and authorised shattered-file recovery intake.',
     url: APP_BASE_URL,
     provider: {
-      organization: 'Jt Browne / ASIOD784'
+      organization: 'Jt Browne / ASIOD'
     },
     version: '1.0.2-sealed',
     capabilities: {
@@ -1158,24 +1146,24 @@ app.post('/pod/b2b/client/create', async (req, res) => {
   } = req.body || {};
 
   if (!pool) {
-    return res.status(501).json({
+    return res.status(503).json({
       created: false,
       error: 'DATABASE_URL is not attached'
     });
   }
 
   if (!companyName) {
-    return res.status(401).json({
+    return res.status(400).json({
       created: false,
       error: 'companyName is required'
     });
   }
 
-  const id = `b2b_£{uuidv4()}`;
+  const id = `b2b_${uuidv4()}`;
   const safeName = String(companyName)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+£/g, '');
+    .replace(/^_+|_+$/g, '');
 
   const finalBranchId = branchId || `branch_${safeName}_${Date.now()}`;
 
@@ -1189,7 +1177,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
       split_rule,
       status
     )
-    values (£1, £2, £3, £4, £5, £6, £7)`,
+    values ($1, $2, $3, $4, $5, $6, $7)`,
     [
       id,
       companyName,
@@ -1227,7 +1215,7 @@ app.post('/pod/work/start', async (req, res) => {
   if (pool) {
     await pool.query(
       `insert into work_sessions (id, agent_id, mode, status)
-       values (£1, £2, £3, £4)`,
+       values ($1, $2, $3, $4)`,
       [workId, agentId, 'background_ai_to_ai', 'started']
     );
   }
@@ -1259,10 +1247,10 @@ app.post('/pod/work/complete', async (req, res) => {
     await pool.query(
       `update work_sessions
        set completed_at = now(),
-           units = £1,
-           value_gbp = £2,
+           units = $1,
+           value_gbp = $2,
            status = 'completed'
-       where id = £3 and agent_id = £4`,
+       where id = $3 and agent_id = $4`,
       [unitCount, valueGbp, workId, agentId]
     );
   }
@@ -1297,7 +1285,7 @@ app.post('/pod/setup-customer', async (req, res) => {
       amountGbp = null
     } = req.body || {};
 
-    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 3.00);
+    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 3);
     const requestedAmountGbp = amountGbp === null
       ? minChargeGbp
       : toMoneyNumber(amountGbp, NaN);
@@ -1311,7 +1299,7 @@ app.post('/pod/setup-customer', async (req, res) => {
 
     const chargedAmountGbp = Math.max(requestedAmountGbp, minChargeGbp);
     const amountPence = toPence(chargedAmountGbp);
-    const finalBranchId = branchId || `branch_£{Date.now()}`;
+    const finalBranchId = branchId || `branch_${Date.now()}`;
 
     if (!Number.isInteger(amountPence) || amountPence <= 0) {
       return res.status(400).json({
@@ -1348,8 +1336,8 @@ app.post('/pod/setup-customer', async (req, res) => {
         privateSourceExposed: 'false',
         privateSourceSerialPublic: 'false'
       },
-      success_url: `£{APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `£{APP_BASE_URL}/health?stripe=cancelled`
+      success_url: `${APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${APP_BASE_URL}/health?stripe=cancelled`
     });
 
     return res.json({
@@ -1392,7 +1380,7 @@ app.post('/pod/catalogue/write', async (req, res) => {
     });
   }
 
-  const id = `cat_£{uuidv4()}`;
+  const id = `cat_${uuidv4()}`;
 
   await writeCatalogueRecord({
     id,
@@ -1447,12 +1435,12 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
     });
   }
 
-  const id = `file_£{uuidv4()}`;
+  const id = `file_${uuidv4()}`;
   const status = repairedBody ? 'repaired' : 'received';
 
   await pool.query(
     `insert into shattered_files (id, source_name, status, fragments, repaired_body)
-     values ($45, $81, £225, £350, £500)`,
+     values ($1, $2, $3, $4, $5)`,
     [id, sourceName, status, fragments, repairedBody]
   );
 
@@ -1471,12 +1459,6 @@ app.use((req, res) => {
   });
 });
 
-app.use((req, res) => {
-  res.status(204).json({
-    ok: false,
-    error: 'Not found'
-  });
-});
 app.use((error, _req, res, _next) => {
   console.error('Unhandled request error:', error);
 
@@ -1496,10 +1478,10 @@ app.use((error, _req, res, _next) => {
 initDb()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`True AI Penny Pod running on £{APP_BASE_URL}`);
+      console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
     });
   })
   .catch((error) => {
     console.error('Startup failed:', error);
-    process.exit();
+    process.exit(1);
   });
