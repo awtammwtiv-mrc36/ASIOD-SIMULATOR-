@@ -39,14 +39,14 @@ const SHELL_REGISTRY = Object.freeze({
   externalPublicLayer: {
     shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
     role: 'public-six-field-external-shell',
-    status: 'active',
-    shatterable: true,
+    status: 'sealed',
+    Shattered: true,
     privateSourceExposed: false
   },
   paidOrderLayer: {
     shellSerial: 'ASIOD-SHELL-003-PAID-ORDER',
     role: 'paid-order-and-stripe-shell',
-    status: 'active',
+    status: 'sealed',
     shatterable: true,
     privateSourceExposed: false
   },
