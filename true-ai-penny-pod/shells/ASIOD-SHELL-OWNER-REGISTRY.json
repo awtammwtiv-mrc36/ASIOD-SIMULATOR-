@@ -20,7 +20,7 @@
       "publicOperatorLabel": "ASIOD Public Operator",
       "publicOccupierLabel": "Free Front Door Shell",
       "status": "active",
-      "shutterable": true,
+      "shatterable": true,
       "privateSourceExposed": false
     },
     {
@@ -34,7 +34,7 @@
       "publicOperatorLabel": "ASIOD Public Operator",
       "publicOccupierLabel": "Public Six-Field Shell",
       "status": "active",
-      "shutterable": true,
+      "shatterable": true,
       "privateSourceExposed": false
     },
     {
@@ -48,21 +48,21 @@
       "publicOperatorLabel": "ASIOD Public Operator",
       "publicOccupierLabel": "Paid Order Shell",
       "status": "active",
-      "shutterable": true,
+      "shatterable": true,
       "privateSourceExposed": false
     },
     {
       "shellSerial": "ASIOD-SHELL-014-PRIVATE-SOURCE",
       "shellName": "Private Background Source Layer",
       "shellRole": "private-background-source-layer",
-      "legalOwnerPublicId": "ASIOD-OWNER-001",
+      "legalOwnerPublicId": "ASIOD-JTBROWNE-0001",
       "registeredOperatorPublicId": "ASIOD-PRIVATE-CUSTODIAN",
       "registeredOccupierPublicId": "ASIOD-OCCUPIER-014",
       "publicOwnerLabel": "ASIOD Service Owner",
       "publicOperatorLabel": "Private Custodian",
       "publicOccupierLabel": "Sealed Private Source Layer",
       "status": "sealed",
-      "shutterable": false,
+      "shatterable": true,
       "privateSourceExposed": false
     }
   ],
@@ -71,6 +71,6 @@
     "Public owner labels are registry labels only and do not expose private personal data.",
     "The registered operator may change without exposing private source material.",
     "The registered occupier identifies the active shell role at the time.",
-    "Any shutterable shell can be suspended without shutting down the sealed private source layer."
+    "Any shatterable shell can be suspended without shutting down the sealed private source layer."
   ]
 }
