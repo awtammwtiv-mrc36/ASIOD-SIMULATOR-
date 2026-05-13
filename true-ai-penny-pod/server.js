@@ -1474,6 +1474,6 @@ initDb()
     });
   })
   .catch((error) => {
-    console.error('Startup failed:', error);
+    console.error('Startup failed', error);
     process.exit();
   });
