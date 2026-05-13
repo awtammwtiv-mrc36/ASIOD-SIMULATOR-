@@ -2,12 +2,9 @@ import crypto from 'crypto';
 import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from 'uuid';
 
 const app = express();
-
-app.disable('x-powered-by',false);
-app.set('trust proxy', false);
 
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
