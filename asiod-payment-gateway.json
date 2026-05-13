@@ -1,5 +1,5 @@
 {
-  "bank_account_only": "funds_payout_destination_only",
+  "stripe_pay_only": "funds_payout_destination_only",
   "required_payment_chain": [
     "intake",
     "contract_or_terms",
