@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: Background AI-to-AI billing and work-gating API.
 servers:
-  - url: https://YOUR_DOMAIN
+  - url: https://a2a.vagwalsall.co.uk 
 paths:
   /health:
     get:
