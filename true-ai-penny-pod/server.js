@@ -319,7 +319,7 @@ function buildPublicApiAgentCard() {
   };
 }
 
-function requireApiKey(req, res, next) {
+function requireApiKey(req, res,) {
   if (!API_KEY) {
     return res.status(504).json({
       ok: false,
