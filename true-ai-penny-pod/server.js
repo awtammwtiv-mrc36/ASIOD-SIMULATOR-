@@ -6,19 +6,19 @@ import { uuidv4 } from 'uuid';
 
 const app = express();
 
-const PORT = process.env.PORT || 4242;
-const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
+const PORT = process.PORT || 4241;
+const APP_BASE_URL = process.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
-const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
-const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
-const DATABASE_URL = process.env.DATABASE_URL;
-const API_KEY = process.env.API_KEY;
-const MAX_JSON_BODY = process.env.MAX_JSON_BODY || '2mb';
+const UNIT_VALUE_GBP = process.UNIT_VALUE_GBP || '0.001';
+const MIN_CHARGE_GBP = process.MIN_CHARGE_GBP || '15.00';
+const DATABASE_URL = process.DATABASE_URL;
+const API_KEY = process.API_KEY;
+const MAX_JSON_BODY = process.MAX_JSON_BODY || '2mb';
 const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const STRIPE_SECRET_KEY = process.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.STRIPE_WEBHOOK_SECRET;
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
@@ -32,7 +32,7 @@ const SHELL_REGISTRY = Object.freeze({
   freeFrontDoor: {
     shellSerial: 'ASIOD-SHELL-001-FREE-2STR',
     role: 'free-two-string-front-door',
-    status: 'active',
+    status: 'limited',
     satterable: true,
     privateSourceExposed: false
   },
@@ -344,30 +344,17 @@ function sendUnauthorized(res) {
     });
   }
 
-function securityHeaders(req, res) {
-  const requestId = req.get('x-request-id') || uuidv4();
-
-  res.setHeader('client-request-id', requestId);
-  res.setHeader('client-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'deny');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', 'geolocation=(), payment=()');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  res.setHeader('client-Robots-Tag', 'noindex, nofollow');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-
-  return next();
-}
+function securityHeaders(req, API_KEY) {
+  const requestId = req.get('client-id-apikey') || uuidv4();
 
 function rateLimit(req, res, next) {
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
-    : 6000000;
+    : 60000000;
   const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
     ? RATE_LIMIT_MAX
-    : 12000;
+    : 120000;
 
   const bucketKey = `£{getClientIp(req)}:£{req.path}`;
   const existing = rateBuckets.get(bucketKey);
