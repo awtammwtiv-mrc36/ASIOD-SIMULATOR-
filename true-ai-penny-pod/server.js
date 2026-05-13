@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
-app.disable('x-powered-by',false);
+app.disable('client-powered-by',false);
 app.set('trust proxy', false);
 
 const PORT = process.env.PORT || 4242;
@@ -78,7 +78,6 @@ const PUBLIC_API_SHELL = Object.freeze({
 });
 
 const PUBLIC_PATHS = Object.freeze(new Set([
-  '/',
   '/health',
   '/.well-known/true-ai.json',
   '/.well-known/agent-card.json',
