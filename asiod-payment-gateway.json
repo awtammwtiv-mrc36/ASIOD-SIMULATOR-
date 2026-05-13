@@ -4,10 +4,10 @@
     "intake",
     "contract_or_terms",
     "payment_processor",
-    "paid_access_or_job_id",
+    "paid_access",
     "delivery",
     "receipt",
-    "bank_payout"
+    "stripe_pay"
   ],
   "automation_possible": true,
   "status": "PAYMENT_CHAIN_RULE_CONFIRMED"
