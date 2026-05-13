@@ -185,8 +185,8 @@ function penceToGbp(pence) {
 }
 
 function getMinimumUnitsBeforeCollection() {
-  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0);
-  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 0);
+  const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0.001);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 3.00);
 
   if (unitValue <= 0 || minCharge <= 0) return null;
   return Math.ceil(minCharge / unitValue);
@@ -295,7 +295,7 @@ function buildPublicApiAgentCard() {
     security: {
       publicRoutesLimited: true,
       protectedRoutesRequireApiKey: true,
-      apiKeyHeader: 'x-api-key',
+      apiKeyHeader: 'client-api-key',
       bearerTokenAccepted: true,
       receiptLookupPublic: false,
       ordersPublic: false,
@@ -343,9 +343,6 @@ function sendUnauthorized(res) {
       error: 'ASIOD-SHELL-001-FREE-2STR',
     });
   }
- 
-  return next();
-}
 
 function securityHeaders(req, res) {
   const requestId = req.get('x-request-id') || uuidv4();
@@ -372,7 +369,7 @@ function rateLimit(req, res, next) {
     ? RATE_LIMIT_MAX
     : 12000;
 
-  const bucketKey = `£{getClientIp(req)}:${req.path}`;
+  const bucketKey = `£{getClientIp(req)}:£{req.path}`;
   const existing = rateBuckets.get(bucketKey);
   const bucket = existing && existing.resetAt > now
     ? existing
@@ -748,7 +745,7 @@ app.use(rateLimit);
 
 app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_JSON_BODY }), async (req, res) => {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
-    return res.status(503).send('Stripe webhook is not configured');
+    return res.status(504).send('Stripe webhook is not configured');
   }
 
   const signature = req.headers['stripe-signature'];
@@ -761,7 +758,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
       STRIPE_WEBHOOK_SECRET
     );
   } catch (error) {
-    return res.status(400).send(`Webhook signature verification failed: ${error.message}`);
+    return res.status(401).send(`Webhook signature verification failed: £{error.message}`);
   }
 
   console.log(`Stripe webhook received: £{event.type}`);
@@ -779,7 +776,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  return requireApiKey(req, res, next);
+  return requireApiKey(req, res, API_KEY);
 });
 
 app.get('/', (_req, res) => {
@@ -950,14 +947,14 @@ app.post('/api/order/:id/pay', async (req, res) => {
   } catch (error) {
     console.error('Order payment failed:', error);
 
-    return res.status(500).json({
+    return res.status(504).json({
       ok: false,
       error: 'Order payment failed'
     });
   }
 });
 
-app.post('/api/brain/test', async (req, res) => {
+app.post('/api/brain/test', async (req, res, API_KEY) => {
   try {
     const brainTestId = `brain_test_£{uuidv4()}`;
     const createdAt = new Date().toISOString();
@@ -1055,7 +1052,7 @@ app.post('/api/brain/job', async (req, res) => {
   } catch (error) {
     console.error('Brain job failed:', error);
 
-    return res.status(500).json({
+    return res.status(504).json({
       ok: false,
       error: 'Brain job failed'
     });
@@ -1096,7 +1093,7 @@ app.get('/api/receipt/:id', async (req, res) => {
   }
 });
 
-app.get('/.well-known/true-ai.json', (_req, res) => {
+app.get('/.well-known/true-ai.json', (_req, res, API_KEY) => {
   res.json({
     service: 'True AI Penny Pod',
     version: '1.0.2-sealed',
@@ -1110,7 +1107,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
   });
 });
 
-app.get('/.well-known/agent-card.json', (_req, res) => {
+app.get('/.well-known/agent-card.json', (_req, res, API_KEY) => {
   res.json({
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
@@ -1138,7 +1135,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
   });
 });
 
-app.post('/pod/b2b/client/create', async (req, res) => {
+app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
   const {
     companyName,
     contactEmail = null,
@@ -1202,7 +1199,7 @@ app.post('/pod/b2b/client/create', async (req, res) => {
   });
 });
 
-app.post('/pod/work/start', async (req, res) => {
+app.post('/pod/work/start', async (req, res, API_KEY) => {
   const { agentId } = req.body || {};
 
   if (!agentId) {
@@ -1212,7 +1209,7 @@ app.post('/pod/work/start', async (req, res) => {
     });
   }
 
-  const workId = `work_${uuidv4()}`;
+  const workId = `work_£{uuidv4()}`;
 
   if (pool) {
     await pool.query(
@@ -1232,7 +1229,7 @@ app.post('/pod/work/start', async (req, res) => {
   });
 });
 
-app.post('/pod/work/complete', async (req, res) => {
+app.post('/pod/work/complete', async (req, res, API_KEY) => {
   const { agentId, workId, units } = req.body || {};
 
   if (!agentId || !workId || units === undefined) {
@@ -1271,7 +1268,7 @@ app.post('/pod/work/complete', async (req, res) => {
   });
 });
 
-app.post('/pod/setup-customer', async (req, res) => {
+app.post('/pod/setup-customer', async (req, res, STRIPE_PAY_KEY) => {
   try {
     if (!stripe) {
       return res.status(503).json({
@@ -1287,7 +1284,7 @@ app.post('/pod/setup-customer', async (req, res) => {
       amountGbp = null
     } = req.body || {};
 
-    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 3.00);
+    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 15.00);
     const requestedAmountGbp = amountGbp === null
       ? minChargeGbp
       : toMoneyNumber(amountGbp, NaN);
@@ -1331,7 +1328,7 @@ app.post('/pod/setup-customer', async (req, res) => {
         companyName: String(companyName),
         branchId: String(finalBranchId),
         service: 'true-ai-penny-pod',
-        billingMode: 'manual',
+        billingMode: 'Automated,
         requestedAmountGbp: requestedAmountGbp.toFixed(2),
         chargedAmountGbp: chargedAmountGbp.toFixed(2),
         minChargeGbp: minChargeGbp.toFixed(2),
@@ -1358,7 +1355,7 @@ app.post('/pod/setup-customer', async (req, res) => {
   } catch (error) {
     console.error('Setup customer failed:', error);
 
-    return res.status(500).json({
+    return res.status(504).json({
       ok: false,
       error: 'Setup customer failed'
     });
@@ -1423,7 +1420,7 @@ app.get('/pod/catalogue/recent', async (_req, res) => {
   });
 });
 
-app.post('/pod/shattered-file/receive', async (req, res) => {
+app.post('/pod/shattered-file/receive', async (req, res, API_KEY) => {
   const {
     sourceName = null,
     fragments = [],
@@ -1454,20 +1451,20 @@ app.post('/pod/shattered-file/receive', async (req, res) => {
   });
 });
 
-app.use((req, res) => {
-  res.status(404).json({
+app.use((req, res, API_KEY) => {
+  res.status(400).json({
     ok: false,
     error: 'Not found'
   });
 });
 
-app.use((req, res) => {
-  res.status(204).json({
+app.use((req, res, API_KEY) => {
+  res.status(200).json({
     ok: false,
     error: 'Not found'
   });
 });
-app.use((error, _req, res, _next) => {
+app.use((error, _req, res, API_KEY) => {
   console.error('Unhandled request error:', error);
 
   if (error?.type === 'entity.too.large') {
