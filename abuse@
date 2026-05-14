@@ -1,9 +1,0 @@
-vbnet
-
-Subject: Abuse report — coordinated blocking/interference from IP <offending-ip>
-
-We have observed coordinated activity causing targeted blocking of our service at asiod-simulator.vercel.app. Please see attached signed evidence archive (sha256: <paste-sha256-here>) and specific log lines showing activity from <offending-ip>.
-
-Request: Please investigate and take appropriate action. Preserve logs for the timeframe <times>.
-
-Contact: <ops-email>
