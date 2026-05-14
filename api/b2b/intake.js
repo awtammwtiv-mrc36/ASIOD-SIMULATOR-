@@ -1,34 +1,3 @@
-import crypto from 'crypto';
-
-function hashRequest(body) {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(body || {}))
-    .digest('hex');
-}
-
-function makeReceipt({ route, body, classification, decision }) {
-  return {
-    receipt_id: `b2b_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`,
-    timestamp: new Date().toISOString(),
-    route,
-    request_hash: hashRequest(body),
-    classification,
-    decision,
-    private_engine_exposed: false,
-    redaction_applied: false
-  };
-}
-
-export default function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      accepted: false,
-      error: 'Method not allowed',
-      private_engine_exposed: false
-    });
-  }
-
   const {
     company = null,
     contact_name = null,
