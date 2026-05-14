@@ -7,7 +7,7 @@
   "registeredOccupierPublicId": "ASIOD-CUSTOMER-OCCUPIER-003",
   "status": "reserved-unassigned",
   "active": false,
-  "shutterable": true,
+  "shatterable": true,
   "privateSourceExposed": false,
   "integerLock784": true,
   "ieee754Governance": false,
