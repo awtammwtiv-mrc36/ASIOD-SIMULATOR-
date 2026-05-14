@@ -7,7 +7,7 @@
     "return_limited_preview",
     "show_paid_service_offer",
     "collect_payment",
-    "issue_job_id_or_api_key",
+    "api_key",
     "deliver_full_correction_report",
     "issue_receipt",
     "payout_to_stripe_pay"
