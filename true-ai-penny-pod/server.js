@@ -1,24 +1,26 @@
+import crypto from 'crypto';
 import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
-import { uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
-},
 
-const PORT = process.PORT || 4242;
-const APP_BASE_URL = process.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
+const PORT = process.env.PORT || 4242;
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
-const UNIT_VALUE_GBP = process.UNIT_VALUE_GBP || '0.001';
-const MIN_CHARGE_GBP = process.MIN_CHARGE_GBP || '15.00';
-const DATABASE_URL = process.DATABASE_URL;
-const API_KEY = process.API_KEY;
-const MAX_JSON_BODY = process.MAX_JSON_BODY || '2mb';
+const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
+const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
+
+const DATABASE_URL = process.env.DATABASE_URL;
+const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
+const BUSINESS_API_KEY = process.env.BUSINESS_API_KEY;
+
 const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
-const STRIPE_SECRET_KEY = process.STRIPE_SECRET_KEY;
-const STRIPE_WEBHOOK_SECRET = process.STRIPE_WEBHOOK_SECRET;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
@@ -28,19 +30,22 @@ const localQuotes = new Map();
 const localOrders = new Map();
 const rateBuckets = new Map();
 
+const legacyCoinLedger = [];
+const legacyCoinTotals = new Map();
+
 const SHELL_REGISTRY = Object.freeze({
   freeFrontDoor: {
     shellSerial: 'ASIOD-SHELL-001-FREE-2STR',
     role: 'free-two-string-front-door',
     status: 'limited',
-    satterable: true,
+    shatterable: true,
     privateSourceExposed: false
   },
   externalPublicLayer: {
     shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
     role: 'public-six-field-external-shell',
     status: 'sealed',
-    Shattered: true,
+    shatterable: true,
     privateSourceExposed: false
   },
   paidOrderLayer: {
@@ -74,22 +79,13 @@ const PUBLIC_API_SHELL = Object.freeze({
   decimalDisplay: 'diagnostic-only'
 });
 
-const PUBLIC_PATHS = Object.freeze(new Set([
-  '/health',
-  '/.well-known/true-ai.json',
-  '/.well-known/agent-card.json',
-  '/api/health',
-  '/api/agent-card',
-  '/api/services'
-]));
-
 const SERVICE_CATALOGUE = Object.freeze([
   {
     serviceId: 'basic-a2a-intake',
     shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
     name: 'Basic A2A Intake',
     description: 'Minimum paid AI-to-AI intake, receipt creation, and catalogue write.',
-    unitPriceGbp: '10.00',
+    unitPriceGbp: '15.00',
     currency: 'gbp',
     active: true
   },
@@ -158,6 +154,36 @@ const SERVICE_CATALOGUE = Object.freeze([
   }
 ]);
 
+const BLOCKED_ATTACK_PATHS = Object.freeze([
+  '/.env',
+  '/admin',
+  '/wp-',
+  '/xmlrpc.php',
+  '/php',
+  '/backup',
+  '/tmp',
+  '/.git',
+  '/config',
+  '/server.js',
+  '/package.json',
+  '/node_modules'
+]);
+
+const QUIET_PUBLIC_PATHS = Object.freeze(new Set([
+  '/favicon.ico',
+  '/favicon.png',
+  '/robots.txt',
+  '/ads.txt',
+  '/sitemap.xml'
+]));
+
+const BLOCKED_AGENTS = Object.freeze([
+  'CMS-Checker',
+  'weft-search-triage',
+  'Go-http-client',
+  'SkypeUriPreview'
+]);
+
 function toMoneyNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -172,7 +198,7 @@ function toPence(gbpValue) {
   const [poundsRaw = '0', penceRaw = ''] = cleanValue.split('.');
 
   const pounds = Number.parseInt(poundsRaw || '0', 10);
-  const pence = Number.parseInt(`£{penceRaw}00`.slice(0, 2) || '0', 10);
+  const pence = Number.parseInt(`${penceRaw}00`.slice(0, 2) || '0', 10);
 
   if (!Number.isFinite(pounds) || !Number.isFinite(pence)) return 0;
 
@@ -186,7 +212,7 @@ function penceToGbp(pence) {
 
 function getMinimumUnitsBeforeCollection() {
   const unitValue = toMoneyNumber(UNIT_VALUE_GBP, 0.001);
-  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 3.00);
+  const minCharge = toMoneyNumber(MIN_CHARGE_GBP, 15.00);
 
   if (unitValue <= 0 || minCharge <= 0) return null;
   return Math.ceil(minCharge / unitValue);
@@ -197,20 +223,7 @@ function getServiceById(serviceId) {
 }
 
 function getClientIp(req) {
-  return req.ip || req.socket?.remoteAddress || 'client';
-}
-
-function isPublicPath(path) {
-  return PUBLIC_PATHS.has(path);
-}
-
-function getSuppliedApiKey(req) {
-  const headerKey = req.get('client-api-key');
-  if (headerKey) return headerKey;
-
-  const auth = req.get('authorization') || '';
-  const match = auth.match(/^Bearer\s+(.+)£/i);
-  return match ? match[1] : null;
+  return req.socket?.remoteAddress || req.ip || 'client';
 }
 
 function constantTimeEquals(a, b) {
@@ -219,6 +232,34 @@ function constantTimeEquals(a, b) {
 
   if (left.length !== right.length) return false;
   return crypto.timingSafeEqual(left, right);
+}
+
+function requireShellKey(req) {
+  const suppliedClientKey = req.get('client-api-key') || '';
+  const suppliedBusinessKey = req.get('business-api-key') || '';
+
+  const clientKeyValid = Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, CLIENT_API_KEY);
+  const businessKeyValid = Boolean(BUSINESS_API_KEY) && constantTimeEquals(suppliedBusinessKey, BUSINESS_API_KEY);
+
+  if (!clientKeyValid && !businessKeyValid) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'client-or-business-key-required'
+    };
+  }
+
+  return {
+    ok: true,
+    access: clientKeyValid ? 'client' : 'business'
+  };
+}
+
+function sendUnauthorized(res) {
+  return res.status(401).json({
+    ok: false,
+    error: 'client-or-business-key-required'
+  });
 }
 
 function sanitizePublicPayload(payload = {}) {
@@ -246,7 +287,7 @@ function buildQuote({ serviceId, quantity = 1, requester = null } = {}) {
   const subtotalPence = unitPence * safeQuantity;
   const amountPence = Math.max(subtotalPence, minPence);
 
-  const quoteId = `quote_£{uuidv4()}`;
+  const quoteId = `quote_${uuidv4()}`;
 
   const quote = {
     ok: true,
@@ -285,7 +326,6 @@ function buildPublicApiAgentCard() {
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
     endpoints: {
-      
       health: '/api/health',
       services: '/api/services',
       agent_card: '/api/agent-card',
@@ -294,9 +334,9 @@ function buildPublicApiAgentCard() {
     },
     security: {
       publicRoutesLimited: true,
-      protectedRoutesRequireApiKey: true,
-      apiKeyHeader: 'client-api-key',
-      bearerTokenAccepted: true,
+      protectedRoutesRequireShellKey: true,
+      shellKeyHeaders: ['client-api-key', 'business-api-key'],
+      bearerTokenAccepted: false,
       receiptLookupPublic: false,
       ordersPublic: false,
       podRoutesPublic: false,
@@ -313,50 +353,93 @@ function buildPublicApiAgentCard() {
       'Private source layer remains sealed and background-only.',
       'No public route returns private source material.',
       'No secret key, database URL, Stripe key, webhook secret, or internal credential is returned.',
-      'Receipts, orders, pod routes, brain routes, intakes, quotes, and payment creation require x-api-key.',
+      'Receipts, orders, pod routes, brain routes, intakes, quotes, and payment creation require client-api-key or business-api-key.',
       'Stripe webhook is public only for Stripe delivery and is signature-verified.'
     ]
   };
 }
 
-function requireApiKey(req, res,) {
-  if (!API_KEY) {
-    return res.status(504).json({
-      ok: false,
-      error: 'API_KEY is not configured'
-    });
-  }
-  
-function sendUnauthorized(res) {
-  return res.status(404).json({
-    ok: false,
-    error: 'Unauthorized'
-  });
+function addLegacyCoins(req, reason, legacyCoins, statusReturned) {
+  const ip = getClientIp(req);
+  const event = {
+    event: 'LEGACY_COIN_CAPTURE',
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    ip,
+    userAgent: req.get('user-agent') || '',
+    reason,
+    legacyCoins,
+    statusReturned
+  };
+
+  legacyCoinLedger.push(event);
+  if (legacyCoinLedger.length > 1000) legacyCoinLedger.shift();
+
+  const current = legacyCoinTotals.get(ip) || 0;
+  legacyCoinTotals.set(ip, current + legacyCoins);
+
+  return event;
 }
 
- const suppliedKey = getSuppliedApiKey(req);
+function securityHeaders(req, res, next) {
+  const requestId = req.get('client-id') || uuidv4();
 
+  res.setHeader('X-Request-Id', requestId);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
 
-  if (!suppliedKey || !constantTimeEquals(API_KEY)) {
-    return res.status(200).json({
-      ok: false,
-      error: 'ASIOD-SHELL-001-FREE-2STR',
-    });
+  return next();
+}
+
+function quarantineGate(req, res, next) {
+  const path = req.path;
+  const userAgent = String(req.get('user-agent') || '').toLowerCase();
+  const contentType = String(req.get('content-type') || '').toLowerCase();
+
+  if (req.method === 'HEAD') {
+    addLegacyCoins(req, 'head-noise', 1, 204);
+    return res.status(204).end();
   }
 
-function securityHeaders(req, API_KEY) {
-  const requestId = req.get('client-id-apikey') || uuidv4();
+  if (QUIET_PUBLIC_PATHS.has(path)) {
+    addLegacyCoins(req, 'quiet-public-noise', 2, 404);
+    return res.status(404).send('Not found');
+  }
+
+  for (const blockedPath of BLOCKED_ATTACK_PATHS) {
+    if (path === blockedPath || path.includes(blockedPath)) {
+      addLegacyCoins(req, 'blocked-attack-path', 10, 404);
+      return res.status(404).send('Not found');
+    }
+  }
+
+  for (const agent of BLOCKED_AGENTS) {
+    if (userAgent.includes(agent.toLowerCase())) {
+      addLegacyCoins(req, 'blocked-user-agent', 25, 404);
+      return res.status(404).send('Not found');
+    }
+  }
+
+  if (contentType.includes('multipart/form-data')) {
+    addLegacyCoins(req, 'multipart-upload-blocked', 50, 404);
+    return res.status(404).send('Not found');
+  }
+
+  return next();
+}
 
 function rateLimit(req, res, next) {
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
-    : 60000000;
+    : 600000;
   const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
     ? RATE_LIMIT_MAX
-    : 120000;
+    : 1200;
 
-  const bucketKey = `£{getClientIp(req)}:£{req.path}`;
+  const bucketKey = `${getClientIp(req)}:${req.path}`;
   const existing = rateBuckets.get(bucketKey);
   const bucket = existing && existing.resetAt > now
     ? existing
@@ -370,6 +453,7 @@ function rateLimit(req, res, next) {
   res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
 
   if (bucket.count > maxRequests) {
+    addLegacyCoins(req, 'rate-limit-exceeded', 100, 429);
     return res.status(429).json({
       ok: false,
       error: 'Too many requests'
@@ -392,6 +476,75 @@ if (typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
 
+const LOCKED_JSON_BODY_LIMIT = '32kb';
+
+const lockedJsonBody = express.json({
+  limit: LOCKED_JSON_BODY_LIMIT,
+  type: 'application/json'
+});
+
+function parseLockedJsonBody(req, res, onReady) {
+  return lockedJsonBody(req, res, (error) => {
+    if (error) {
+      if (error?.type === 'entity.too.large') {
+        addLegacyCoins(req, 'json-body-too-large', 50, 413);
+        return res.status(413).json({
+          ok: false,
+          error: 'Request body too large'
+        });
+      }
+
+      addLegacyCoins(req, 'invalid-json-body', 10, 400);
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid JSON body'
+      });
+    }
+
+    return onReady();
+  });
+}
+
+function protectedJson(handler) {
+  return (req, res) => {
+    const access = requireShellKey(req);
+
+    if (!access.ok) {
+      addLegacyCoins(req, 'protected-route-without-client-or-business-key', 100, 401);
+      return sendUnauthorized(res);
+    }
+
+    return parseLockedJsonBody(req, res, () => {
+      return Promise.resolve(handler(req, res, access)).catch((error) => {
+        console.error('Protected JSON route failed:', error);
+        return res.status(500).json({
+          ok: false,
+          error: 'Protected route failed'
+        });
+      });
+    });
+  };
+}
+
+function protectedNoBody(handler) {
+  return (req, res) => {
+    const access = requireShellKey(req);
+
+    if (!access.ok) {
+      addLegacyCoins(req, 'protected-route-without-client-or-business-key', 100, 401);
+      return sendUnauthorized(res);
+    }
+
+    return Promise.resolve(handler(req, res, access)).catch((error) => {
+      console.error('Protected route failed:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'Protected route failed'
+      });
+    });
+  };
+}
+
 async function writeCatalogueRecord({
   id,
   workId = null,
@@ -405,7 +558,7 @@ async function writeCatalogueRecord({
 
   await pool.query(
     `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-     values (£1, £2, £3, £4, £5, £6, £7)
+     values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (id) do update
      set work_id = excluded.work_id,
          agent_id = excluded.agent_id,
@@ -420,7 +573,7 @@ async function writeCatalogueRecord({
 }
 
 async function createApiReceipt(channel, payload = {}) {
-  const receiptId = `receipt_£{uuidv4()}`;
+  const receiptId = `receipt_${uuidv4()}`;
   const createdAt = new Date().toISOString();
 
   const receipt = {
@@ -440,8 +593,8 @@ async function createApiReceipt(channel, payload = {}) {
   receipt.catalogueStored = await writeCatalogueRecord({
     id: receiptId,
     agentId: channel,
-    recordType: `api_£{channel}_receipt`,
-    title: `API receipt: £{channel}`,
+    recordType: `api_${channel}_receipt`,
+    title: `API receipt: ${channel}`,
     body: {
       receipt,
       payload: sanitizePublicPayload(payload)
@@ -463,7 +616,7 @@ async function readApiReceipt(receiptId) {
   const result = await pool.query(
     `select id, agent_id, record_type, title, body, units, created_at
      from catalogue_records
-     where id = £1
+     where id = $1
      limit 1`,
     [receiptId]
   );
@@ -487,8 +640,8 @@ async function readApiReceipt(receiptId) {
   };
 }
 
-async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null } = {}) {
-  const orderId = `order_£{uuidv4()}`;
+async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null, access = null } = {}) {
+  const orderId = `order_${uuidv4()}`;
   const receipt = await createApiReceipt('order', {
     orderId,
     quoteId: quote.quoteId,
@@ -519,6 +672,7 @@ async function createOrderFromQuote({ quote, agentId = null, customerEmail = nul
     paymentRail: 'stripe',
     shellSerial: quote.shellSerial,
     shellStatus: quote.shellStatus,
+    access,
     privateSourceExposed: false,
     integerLock784: true,
     ieee754Governance: false,
@@ -532,7 +686,7 @@ async function createOrderFromQuote({ quote, agentId = null, customerEmail = nul
     id: orderId,
     agentId: agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: £{quote.serviceName}`,
+    title: `Paid order: ${quote.serviceName}`,
     body: order,
     units: 0
   });
@@ -550,7 +704,7 @@ async function readOrder(orderId) {
   const result = await pool.query(
     `select id, body, created_at
      from catalogue_records
-     where id = £1 and record_type = 'api_paid_order'
+     where id = $1 and record_type = 'api_paid_order'
      limit 1`,
     [orderId]
   );
@@ -615,8 +769,8 @@ async function createStripeCheckoutForOrder(order) {
       integerLock784: 'true',
       ieee754Governance: 'false'
     },
-    success_url: `£{APP_BASE_URL}/api/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-   cancel_url: `ASIOD-SHELL-001-FREE-2STR`
+    success_url: `${APP_BASE_URL}/?stripe=success`,
+    cancel_url: `${APP_BASE_URL}/?stripe=cancelled`
   });
 
   order.status = 'payment_session_created';
@@ -637,7 +791,7 @@ async function createStripeCheckoutForOrder(order) {
     id: order.orderId,
     agentId: order.agentId || 'paid-order',
     recordType: 'api_paid_order',
-    title: `Paid order: £{order.serviceName}`,
+    title: `Paid order: ${order.serviceName}`,
     body: order,
     units: 0
   });
@@ -653,14 +807,14 @@ async function handleApiIntake(channel, req, res) {
       shellStatus: SHELL_REGISTRY.externalPublicLayer.status
     });
 
-    return res.json(receipt);
+    return res.status(200).json(receipt);
   } catch (error) {
-    console.error(`API intake failed for £{channel}:`, error);
+    console.error(`API intake failed for ${channel}:`, error);
 
     return res.status(500).json({
       ok: false,
       channel,
-      error: ' 'ASIOD_SHELL_001_FREE_2STR',
+      error: 'ASIOD-SHELL-001-FREE-2STR'
     });
   }
 }
@@ -728,11 +882,12 @@ async function initDb() {
 }
 
 app.use(securityHeaders);
+app.use(quarantineGate);
 app.use(rateLimit);
 
-app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_JSON_BODY }), async (req, res) => {
+app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: '128kb' }), async (req, res) => {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
-    return res.status(504).send('Stripe webhook is not configured');
+    return res.status(503).send('Stripe webhook is not configured');
   }
 
   const signature = req.headers['stripe-signature'];
@@ -745,42 +900,33 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: MAX_J
       STRIPE_WEBHOOK_SECRET
     );
   } catch (error) {
-    return res.status(401).send(`Webhook signature verification failed: £{error.message}`);
+    addLegacyCoins(req, 'stripe-webhook-signature-failed', 100, 401);
+    return res.status(401).send('Webhook signature verification failed');
   }
 
-  console.log(`Stripe webhook received: £{event.type}`);
+  console.log(`Stripe webhook received: ${event.type}`);
 
-  return res.json({
+  return res.status(200).json({
     received: true,
     type: event.type
   });
 });
 
-app.use(express.json({ limit: MAX_JSON_BODY }));
-
-app.use((req, res, next) => {
-  if (isPublicPath(req.path)) {
-    return next();
-  }
-
-  return requireApiKey(req, res, API_KEY);
-});
-
 app.get('/', (_req, res) => {
-  res.json({
+  return res.status(200).json({
     ok: true,
-    service: 'ASIOD Public API Shell',
-    version: '1.0.2-sealed',
-    status: 'live',
-    health: '/api/health',
+    shell: SHELL_REGISTRY.freeFrontDoor.shellSerial,
+    route: 'two-string-free-tier',
     privateSourceExposed: false,
     privateSourceSerialPublic: false,
+    cataloguePublic: false,
+    paymentPublic: false,
     integerLock784: true
   });
 });
 
 app.get('/health', (_req, res) => {
-  res.json({
+  return res.status(200).json({
     ok: true,
     service: 'True AI Penny Pod',
     version: '1.0.2-sealed',
@@ -792,7 +938,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  res.json({
+  return res.status(200).json({
     ok: true,
     service: 'ASIOD Public API Shell',
     version: '1.0.2-sealed',
@@ -804,298 +950,39 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/agent-card', (_req, res) => {
-  res.json(buildPublicApiAgentCard());
+  return res.status(200).json(buildPublicApiAgentCard());
 });
 
 app.get('/api/services', (_req, res) => {
-  res.json({
+  return res.status(200).json({
     ok: true,
-    pricingMode: 'fixed',
-    currency: 'gbp',
-    paymentRail: 'stripe',
+    shell: SHELL_REGISTRY.freeFrontDoor.shellSerial,
+    route: 'two-string-free-tier',
     privateSourceExposed: false,
-    privateSourceSerialPublic: false,
-    integerLock784: true,
-    ieee754Governance: false,
-    services: SERVICE_CATALOGUE.map((service) => ({
-      serviceId: service.serviceId,
-      name: service.name,
-      description: service.description,
-      unitPriceGbp: service.unitPriceGbp,
-      currency: service.currency,
-      active: service.active
-    }))
+    cataloguePublic: false,
+    paymentPublic: false,
+    message: 'Public service discovery is limited to the two-string free tier.'
   });
 });
 
-app.post('/api/quote', (req, res) => {
-  const quote = buildQuote({
-    serviceId: req.body?.serviceId,
-    quantity: req.body?.quantity,
-    requester: req.body?.requester || req.body?.agentId || null
-  });
+app.get('/.well-known/true-ai.json', (_req, res) => {
+  const card = buildPublicApiAgentCard();
 
-  if (!quote.ok) {
-    return res.status(400).json(quote);
-  }
-
-  return res.json(quote);
-});
-
-app.post('/api/order/create', async (req, res) => {
-  try {
-    const quote = buildQuote({
-      serviceId: req.body?.serviceId,
-      quantity: req.body?.quantity,
-      requester: req.body?.requester || req.body?.agentId || null
-    });
-
-    if (!quote.ok) {
-      return res.status(400).json(quote);
-    }
-
-    const order = await createOrderFromQuote({
-      quote,
-      agentId: req.body?.agentId || null,
-      customerEmail: req.body?.customerEmail || null,
-      reference: req.body?.reference || null
-    });
-
-    return res.json({
-      ok: true,
-      order,
-      next: {
-        pay: `/api/order/£{order.orderId}/pay`,
-        read: `/api/order/£{order.orderId}`,
-        receipt: `/api/receipt/£{order.receiptId}`
-      }
-    });
-  } catch (error) {
-    console.error('Order create failed:', error);
-
-    return res.status(500).json({
-      ok: false,
-      error: 'Order create failed'
-    });
-  }
-});
-
-app.get('/api/order/:id', async (req, res) => {
-  try {
-    const order = await readOrder(req.params.id);
-
-    if (!order) {
-      return res.status(404).json({
-        ok: false,
-        error: 'Order not found'
-      });
-    }
-
-    return res.json({
-      ok: true,
-      order
-    });
-  } catch (error) {
-    console.error('Order read failed:', error);
-
-    return res.status(500).json({
-      ok: false,
-      error: 'Order read failed'
-    });
-  }
-});
-
-app.post('/api/order/:id/pay', async (req, res) => {
-  try {
-    const order = await readOrder(req.params.id);
-
-    if (!order) {
-      return res.status(404).json({
-        ok: false,
-        error: 'Order not found'
-      });
-    }
-
-    const payment = await createStripeCheckoutForOrder(order);
-
-    if (!payment.ok) {
-      return res.status(503).json(payment);
-    }
-
-    return res.json({
-      ok: true,
-      orderId: order.orderId,
-      receiptId: order.receiptId,
-      serviceId: order.serviceId,
-      amountGbp: order.amountGbp,
-      currency: order.currency,
-      payment
-    });
-  } catch (error) {
-    console.error('Order payment failed:', error);
-
-    return res.status(504).json({
-      ok: false,
-      error: 'Order payment failed'
-    });
-  }
-});
-
-app.post('/api/brain/test', async (req, res, API_KEY) => {
-  try {
-    const brainTestId = `brain_test_£{uuidv4()}`;
-    const createdAt = new Date().toISOString();
-
-    const result = {
-      ok: true,
-      brainTestId,
-      brainTest: 'route-confirmed',
-      status: 'simulator-gateway-confirmed',
-      sourceShell: 'sealed-background-only',
-      gatewayShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      publicReturnShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      directPublicBrainAccess: false,
-      brainCommunicatesThroughSimulatorOnly: true,
-      simulatorFiltersPublicOutput: true,
-      privateSourceExposed: false,
-      privateSourceSerialPublic: false,
-      integerLock784: true,
-      ieee754Governance: false,
-      decimalAuthority: false,
-      createdAt,
-      receivedPayload: sanitizePublicPayload(req.body || {})
-    };
-
-    result.catalogueStored = await writeCatalogueRecord({
-      id: brainTestId,
-      agentId: req.body?.agentId || 'brain-test',
-      recordType: 'api_brain_route_test',
-      title: 'Brain route test through six-field simulator gateway',
-      body: result,
-      units: 0
-    });
-
-    return res.json(result);
-  } catch (error) {
-    console.error('Brain route test failed:', error);
-
-    return res.status(500).json({
-      ok: false,
-      error: 'Brain route test failed'
-    });
-  }
-});
-
-app.post('/api/brain/job', async (req, res) => {
-  try {
-    const brainJobId = `brain_job_£{uuidv4()}`;
-    const createdAt = new Date().toISOString();
-
-    const {
-      agentId = 'brain-job',
-      orderId = null,
-      customerShellSerial = null,
-      jobType = 'general',
-      payload = {}
-    } = req.body || {};
-
-    const result = {
-      ok: true,
-      brainJobId,
-      status: 'accepted-through-six-field-simulator',
-      jobType,
-      orderId,
-      customerShellSerial,
-      sourceShell: 'sealed-background-only',
-      gatewayShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      publicReturnShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      directPublicBrainAccess: false,
-      brainCommunicatesThroughSimulatorOnly: true,
-      simulatorFiltersPublicOutput: true,
-      privateSourceExposed: false,
-      privateSourceSerialPublic: false,
-      integerLock784: true,
-      ieee754Governance: false,
-      decimalAuthority: false,
-      createdAt,
-      receivedPayload: sanitizePublicPayload(payload),
-      safePublicResult: {
-        processed: true,
-        resultType: 'simulator-filtered-job-receipt',
-        message: 'Brain job accepted through the six-field simulator gateway. Private source remains sealed.'
-      }
-    };
-
-    result.catalogueStored = await writeCatalogueRecord({
-      id: brainJobId,
-      agentId,
-      recordType: 'api_brain_job',
-      title: `Brain job: £{jobType}`,
-      body: result,
-      units: Number(req.body?.units || 0)
-    });
-
-    return res.json(result);
-  } catch (error) {
-    console.error('Brain job failed:', error);
-
-    return res.status(504).json({
-      ok: false,
-      error: 'Brain job failed'
-    });
-  }
-});
-
-app.post('/api/b2b/intake', (req, res) => {
-  return handleApiIntake('b2b', req, res);
-});
-
-app.post('/api/a2a/intake', (req, res) => {
-  return handleApiIntake('a2a', req, res);
-});
-
-app.post('/api/crypto/intake', (req, res) => {
-  return handleApiIntake('crypto', req, res);
-});
-
-app.get('/api/receipt/:id', async (req, res) => {
-  try {
-    const receipt = await readApiReceipt(req.params.id);
-
-    if (!receipt) {
-      return res.status(404).json({
-        ok: false,
-        error: 'Receipt not found'
-      });
-    }
-
-    return res.json(receipt);
-  } catch (error) {
-    console.error('Receipt read failed:', error);
-
-    return res.status(500).json({
-      ok: false,
-      error: 'Receipt read failed'
-    });
-  }
-});
-
-app.get('/.well-known/true-ai.json', (_req, res, API_KEY) => {
-  res.json({
+  return res.status(200).json({
     service: 'True AI Penny Pod',
     version: '1.0.2-sealed',
     type: 'public_discovery_manifest',
     status: 'active',
     api_base_url: APP_BASE_URL,
-    publicShell: buildPublicApiAgentCard().shell,
-    security: buildPublicApiAgentCard().security,
-    publicEndpoints: buildPublicApiAgentCard().endpoints,
-    rules: buildPublicApiAgentCard().rules
+    publicShell: card.shell,
+    security: card.security,
+    publicEndpoints: card.endpoints,
+    rules: card.rules
   });
 });
 
-app.get('/.well-known/agent-card.json', (_req, res, API_KEY) => {
-  res.json({
+app.get('/.well-known/agent-card.json', (_req, res) => {
+  return res.status(200).json({
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
     description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, and authorised shattered-file recovery intake.',
@@ -1110,19 +997,180 @@ app.get('/.well-known/agent-card.json', (_req, res, API_KEY) => {
       stateTransitionHistory: true
     },
     authentication: {
-      schemes: ['apiKey', 'bearer'],
-      description: 'Protected routes require x-api-key or Authorization: Bearer. Public read routes are health, discovery, and service catalogue only.'
+      schemes: ['apiKey'],
+      description: 'Protected routes require client-api-key or business-api-key.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     shell: PUBLIC_API_SHELL,
-    security: buildPublicApiAgentCard().security,
-    commerce: buildPublicApiAgentCard().commerce,
-    skills: buildPublicApiAgentCard().skills
+    security: buildPublicApiAgentCard().security
   });
 });
 
-app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
+app.post('/api/quote', protectedJson(async (req, res, access) => {
+  const quote = buildQuote({
+    serviceId: req.body?.serviceId,
+    quantity: req.body?.quantity,
+    requester: req.body?.requester || req.body?.agentId || null
+  });
+
+  if (!quote.ok) {
+    return res.status(400).json(quote);
+  }
+
+  return res.status(200).json({
+    ...quote,
+    access: access.access,
+    protectedRoute: true,
+    privateSourceExposed: false
+  });
+}));
+
+app.post('/api/order/create', protectedJson(async (req, res, access) => {
+  const quote = buildQuote({
+    serviceId: req.body?.serviceId,
+    quantity: req.body?.quantity,
+    requester: req.body?.requester || req.body?.agentId || null
+  });
+
+  if (!quote.ok) {
+    return res.status(400).json(quote);
+  }
+
+  const order = await createOrderFromQuote({
+    quote,
+    agentId: req.body?.agentId || null,
+    customerEmail: req.body?.customerEmail || null,
+    reference: req.body?.reference || null,
+    access: access.access
+  });
+
+  return res.status(200).json({
+    ok: true,
+    order,
+    protectedRoute: true,
+    access: access.access,
+    privateSourceExposed: false,
+    next: {
+      pay: `/api/order/${order.orderId}/pay`,
+      read: `/api/order/${order.orderId}`,
+      receipt: `/api/receipt/${order.receiptId}`
+    }
+  });
+}));
+
+app.get('/api/order/:id', protectedNoBody(async (req, res, access) => {
+  const order = await readOrder(req.params.id);
+
+  if (!order) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Order not found'
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    order,
+    protectedRoute: true,
+    access: access.access,
+    privateSourceExposed: false
+  });
+}));
+
+app.post('/api/order/:id/pay', protectedJson(async (req, res, access) => {
+  const order = await readOrder(req.params.id);
+
+  if (!order) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Order not found'
+    });
+  }
+
+  const payment = await createStripeCheckoutForOrder(order);
+
+  if (!payment.ok) {
+    return res.status(503).json(payment);
+  }
+
+  return res.status(200).json({
+    ok: true,
+    orderId: order.orderId,
+    amountGbp: order.amountGbp,
+    currency: 'gbp',
+    checkoutUrl: payment.checkoutUrl,
+    stripeSessionId: payment.sessionId,
+    protectedRoute: true,
+    access: access.access,
+    privateSourceExposed: false
+  });
+}));
+
+app.post('/api/brain/test', protectedJson(async (req, res, access) => {
+  const brainTestId = `brain_test_${uuidv4()}`;
+  const createdAt = new Date().toISOString();
+
+  const result = {
+    ok: true,
+    brainTestId,
+    brainTest: 'route-confirmed',
+    status: 'simulator-gateway-confirmed',
+    sourceShell: 'sealed-background-only',
+    gatewayShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    publicReturnShell: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    directPublicBrainAccess: false,
+    brainCommunicatesThroughSimulatorOnly: true,
+    simulatorFiltersPublicOutput: true,
+    privateSourceExposed: false,
+    privateSourceSerialPublic: false,
+    integerLock784: true,
+    ieee754Governance: false,
+    decimalAuthority: false,
+    protectedRoute: true,
+    access: access.access,
+    createdAt,
+    receivedPayload: sanitizePublicPayload(req.body || {})
+  };
+
+  result.catalogueStored = await writeCatalogueRecord({
+    id: brainTestId,
+    agentId: req.body?.agentId || 'brain-test',
+    recordType: 'api_brain_route_test',
+    title: 'Brain route test through six-field simulator gateway',
+    body: result,
+    units: 0
+  });
+
+  return res.status(200).json(result);
+}));
+
+app.post('/api/b2b/intake', protectedJson(async (req, res) => {
+  return handleApiIntake('b2b', req, res);
+}));
+
+app.post('/api/a2a/intake', protectedJson(async (req, res) => {
+  return handleApiIntake('a2a', req, res);
+}));
+
+app.post('/api/crypto/intake', protectedJson(async (req, res) => {
+  return handleApiIntake('crypto', req, res);
+}));
+
+app.get('/api/receipt/:id', protectedNoBody(async (req, res) => {
+  const receipt = await readApiReceipt(req.params.id);
+
+  if (!receipt) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Receipt not found'
+    });
+  }
+
+  return res.status(200).json(receipt);
+}));
+
+app.post('/pod/b2b/client/create', protectedJson(async (req, res) => {
   const {
     companyName,
     contactEmail = null,
@@ -1132,24 +1180,24 @@ app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
   } = req.body || {};
 
   if (!pool) {
-    return res.status(501).json({
+    return res.status(503).json({
       created: false,
       error: 'DATABASE_URL is not attached'
     });
   }
 
   if (!companyName) {
-    return res.status(401).json({
+    return res.status(400).json({
       created: false,
       error: 'companyName is required'
     });
   }
 
-  const id = `b2b_£{uuidv4()}`;
+  const id = `b2b_${uuidv4()}`;
   const safeName = String(companyName)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+£/g, '');
+    .replace(/^_+|_+$/g, '');
 
   const finalBranchId = branchId || `branch_${safeName}_${Date.now()}`;
 
@@ -1163,7 +1211,7 @@ app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
       split_rule,
       status
     )
-    values (£1, £2, £3, £4, £5, £6, £7)`,
+    values ($1, $2, $3, $4, $5, $6, $7)`,
     [
       id,
       companyName,
@@ -1175,7 +1223,7 @@ app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
     ]
   );
 
-  return res.json({
+  return res.status(200).json({
     created: true,
     clientId: id,
     companyName,
@@ -1184,9 +1232,9 @@ app.post('/pod/b2b/client/create', async (req, res, API_KEY) => {
     status: 'active',
     message: 'B2B client registered.'
   });
-});
+}));
 
-app.post('/pod/work/start', async (req, res, API_KEY) => {
+app.post('/pod/work/start', protectedJson(async (req, res) => {
   const { agentId } = req.body || {};
 
   if (!agentId) {
@@ -1196,17 +1244,17 @@ app.post('/pod/work/start', async (req, res, API_KEY) => {
     });
   }
 
-  const workId = `work_£{uuidv4()}`;
+  const workId = `work_${uuidv4()}`;
 
   if (pool) {
     await pool.query(
       `insert into work_sessions (id, agent_id, mode, status)
-       values (£1, £2, £3, £4)`,
+       values ($1, $2, $3, $4)`,
       [workId, agentId, 'background_ai_to_ai', 'started']
     );
   }
 
-  return res.json({
+  return res.status(200).json({
     allowed: true,
     agentId,
     workId,
@@ -1214,9 +1262,9 @@ app.post('/pod/work/start', async (req, res, API_KEY) => {
     databaseStored: Boolean(pool),
     message: 'Work gate opened. Catalogue ledger active.'
   });
-});
+}));
 
-app.post('/pod/work/complete', async (req, res, API_KEY) => {
+app.post('/pod/work/complete', protectedJson(async (req, res) => {
   const { agentId, workId, units } = req.body || {};
 
   if (!agentId || !workId || units === undefined) {
@@ -1233,15 +1281,15 @@ app.post('/pod/work/complete', async (req, res, API_KEY) => {
     await pool.query(
       `update work_sessions
        set completed_at = now(),
-           units = £1,
-           value_gbp = £2,
+           units = $1,
+           value_gbp = $2,
            status = 'completed'
-       where id = £3 and agent_id = £4`,
+       where id = $3 and agent_id = $4`,
       [unitCount, valueGbp, workId, agentId]
     );
   }
 
-  return res.json({
+  return res.status(200).json({
     charged: false,
     stored: Boolean(pool),
     agentId,
@@ -1253,103 +1301,94 @@ app.post('/pod/work/complete', async (req, res, API_KEY) => {
     readyForCollection: valueGbp >= Number(MIN_CHARGE_GBP),
     message: 'Units recorded. Stripe charge layer remains behind the service until the minimum collection amount is reached.'
   });
-});
+}));
 
-app.post('/pod/setup-customer', async (req, res, STRIPE_PAY_KEY) => {
-  try {
-    if (!stripe) {
-      return res.status(503).json({
-        ok: false,
-        error: 'STRIPE_SECRET_KEY is not configured'
-      });
-    }
+app.post('/pod/setup-customer', protectedJson(async (req, res) => {
+  if (!stripe) {
+    return res.status(503).json({
+      ok: false,
+      error: 'STRIPE_SECRET_KEY is not configured'
+    });
+  }
 
-    const {
-      companyName = 'B2B Client',
-      contactEmail = null,
-      branchId = null,
-      amountGbp = null
-    } = req.body || {};
+  const {
+    companyName = 'B2B Client',
+    contactEmail = null,
+    branchId = null,
+    amountGbp = null
+  } = req.body || {};
 
-    const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 15.00);
-    const requestedAmountGbp = amountGbp === null
-      ? minChargeGbp
-      : toMoneyNumber(amountGbp, NaN);
+  const minChargeGbp = toMoneyNumber(MIN_CHARGE_GBP, 15.00);
+  const requestedAmountGbp = amountGbp === null
+    ? minChargeGbp
+    : toMoneyNumber(amountGbp, NaN);
 
-    if (!Number.isFinite(requestedAmountGbp) || requestedAmountGbp <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: 'amountGbp must be a positive number'
-      });
-    }
+  if (!Number.isFinite(requestedAmountGbp) || requestedAmountGbp <= 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'amountGbp must be a positive number'
+    });
+  }
 
-    const chargedAmountGbp = Math.max(requestedAmountGbp, minChargeGbp);
-    const amountPence = toPence(chargedAmountGbp);
-    const finalBranchId = branchId || `branch_£{Date.now()}`;
+  const chargedAmountGbp = Math.max(requestedAmountGbp, minChargeGbp);
+  const amountPence = toPence(chargedAmountGbp);
+  const finalBranchId = branchId || `branch_${Date.now()}`;
 
-    if (!Number.isInteger(amountPence) || amountPence <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Unable to calculate a valid Stripe amount'
-      });
-    }
+  if (!Number.isInteger(amountPence) || amountPence <= 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Unable to calculate a valid Stripe amount'
+    });
+  }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      customer_email: contactEmail || undefined,
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: 'gbp',
-            unit_amount: amountPence,
-            product_data: {
-              name: 'True AI Penny Pod B2B Setup',
-              description: 'Initial B2B setup and service access credit.'
-            }
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: ['card'],
+    customer_email: contactEmail || undefined,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'gbp',
+          unit_amount: amountPence,
+          product_data: {
+            name: 'True AI Penny Pod B2B Setup',
+            description: 'Initial B2B setup and service access credit.'
           }
         }
-      ],
-      metadata: {
-        companyName: String(companyName),
-        branchId: String(finalBranchId),
-        service: 'true-ai-penny-pod',
-        billingMode: 'Automated,
-        requestedAmountGbp: requestedAmountGbp.toFixed(2),
-        chargedAmountGbp: chargedAmountGbp.toFixed(2),
-        minChargeGbp: minChargeGbp.toFixed(2),
-        privateSourceExposed: 'false',
-        privateSourceSerialPublic: 'false'
-      },
-      success_url: `£{APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `£{APP_BASE_URL}/health?stripe=cancelled`
-    });
-
-    return res.json({
-      ok: true,
-      checkoutUrl: session.url,
-      sessionId: session.id,
+      }
+    ],
+    metadata: {
+      companyName: String(companyName),
+      branchId: String(finalBranchId),
+      service: 'true-ai-penny-pod',
+      billingMode: 'automated',
       requestedAmountGbp: requestedAmountGbp.toFixed(2),
       chargedAmountGbp: chargedAmountGbp.toFixed(2),
       minChargeGbp: minChargeGbp.toFixed(2),
-      currency: 'gbp',
-      companyName,
-      branchId: finalBranchId,
-      privateSourceExposed: false,
-      message: 'Checkout session created using the minimum collection guard.'
-    });
-  } catch (error) {
-    console.error('Setup customer failed:', error);
+      privateSourceExposed: 'false',
+      privateSourceSerialPublic: 'false'
+    },
+    success_url: `${APP_BASE_URL}/health?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${APP_BASE_URL}/health?stripe=cancelled`
+  });
 
-    return res.status(504).json({
-      ok: false,
-      error: 'Setup customer failed'
-    });
-  }
-});
+  return res.status(200).json({
+    ok: true,
+    checkoutUrl: session.url,
+    sessionId: session.id,
+    requestedAmountGbp: requestedAmountGbp.toFixed(2),
+    chargedAmountGbp: chargedAmountGbp.toFixed(2),
+    minChargeGbp: minChargeGbp.toFixed(2),
+    currency: 'gbp',
+    companyName,
+    branchId: finalBranchId,
+    privateSourceExposed: false,
+    message: 'Checkout session created using the minimum collection guard.'
+  });
+}));
 
-app.post('/pod/catalogue/write', async (req, res) => {
+app.post('/pod/catalogue/write', protectedJson(async (req, res) => {
   const {
     workId = null,
     agentId = null,
@@ -1366,7 +1405,7 @@ app.post('/pod/catalogue/write', async (req, res) => {
     });
   }
 
-  const id = `cat_£{uuidv4()}`;
+  const id = `cat_${uuidv4()}`;
 
   await writeCatalogueRecord({
     id,
@@ -1378,14 +1417,14 @@ app.post('/pod/catalogue/write', async (req, res) => {
     units
   });
 
-  return res.json({
+  return res.status(200).json({
     stored: true,
     catalogueId: id,
     message: 'Catalogue record stored.'
   });
-});
+}));
 
-app.get('/pod/catalogue/recent', async (_req, res) => {
+app.get('/pod/catalogue/recent', protectedNoBody(async (_req, res) => {
   if (!pool) {
     return res.status(503).json({
       ok: false,
@@ -1400,14 +1439,14 @@ app.get('/pod/catalogue/recent', async (_req, res) => {
      limit 25`
   );
 
-  return res.json({
+  return res.status(200).json({
     ok: true,
     count: result.rows.length,
     records: result.rows
   });
-});
+}));
 
-app.post('/pod/shattered-file/receive', async (req, res, API_KEY) => {
+app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
   const {
     sourceName = null,
     fragments = [],
@@ -1416,45 +1455,44 @@ app.post('/pod/shattered-file/receive', async (req, res, API_KEY) => {
 
   if (!pool) {
     return res.status(503).json({
-      stored: false,
-      error: 'DATABASE_URL is not attached'
+      ok: false,
+      error: 'database-not-configured'
     });
   }
 
-  const id = `file_£{uuidv4()}`;
+  const id = `file_${uuidv4()}`;
   const status = repairedBody ? 'repaired' : 'received';
 
   await pool.query(
     `insert into shattered_files (id, source_name, status, fragments, repaired_body)
-     values ($45, $81, £225, £350, £500)`,
+     values ($1, $2, $3, $4, $5)`,
     [id, sourceName, status, fragments, repairedBody]
   );
 
-  return res.json({
+  return res.status(200).json({
+    ok: true,
     stored: true,
     fileId: id,
     status,
+    privateSourceExposed: false,
     message: 'Shattered file record stored.'
   });
-});
+}));
 
-app.use((req, res, API_KEY) => {
-  res.status(400).json({
+app.use((req, res) => {
+  addLegacyCoins(req, 'final-not-found', 5, 404);
+
+  return res.status(404).json({
     ok: false,
     error: 'Not found'
   });
 });
 
-app.use((req, res, API_KEY) => {
-  res.status(200).json({
-    ok: false,
-    error: 'Not found'
-  });
-});
-app.use((error, _req, res, API_KEY) => {
+app.use((error, req, res, _next) => {
   console.error('Unhandled request error:', error);
 
   if (error?.type === 'entity.too.large') {
+    addLegacyCoins(req, 'request-body-too-large', 50, 413);
     return res.status(413).json({
       ok: false,
       error: 'Request body too large'
@@ -1463,17 +1501,17 @@ app.use((error, _req, res, API_KEY) => {
 
   return res.status(500).json({
     ok: false,
-    error: 'ASIOD-SHELL-001-FREE-2STR',
+    error: 'ASIOD-SHELL-001-FREE-2STR'
   });
 });
 
 initDb()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`True AI Penny Pod running on £{APP_BASE_URL}`);
+      console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
     });
   })
   .catch((error) => {
     console.error('Startup failed', error);
-    process.exit();
+    process.exit(1);
   });
