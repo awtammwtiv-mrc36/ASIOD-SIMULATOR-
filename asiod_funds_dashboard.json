@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "purpose": "Display payment processor balances and payout state for ASIOD paid services.",
   "funds_source": "payment_processor_balance_api",
-  "bank_account_role": "funds_payout_destination_only",
+  "bank_account_role": "funds_payout_stripe_pay_only",
   "bank_details_stored_in_repo": false,
   "secret_keys_stored_in_repo": false,
   "display_fields": [
@@ -23,5 +23,5 @@
     "receipt_is_issued",
     "funds_settle_to_bank_account"
   ],
-  "status": "FUNDS_DISPLAY_READY_FOR_PAYMENT_PROCESSOR_CONNECTION"
+  "status": "FUNDS_DISPLAY_READY_FOR_PAYMENT_ STRIPE_ PAY"
 }
