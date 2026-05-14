@@ -21,7 +21,7 @@
       "decimal_role": "human_display_only",
       "decimal_places_max": 4
     },
-    "allowed_role": "quarantine"<<json
+    "allowed_role": "quarantine"<<json,
   },
   "proof_authority": [
     "source_law",
