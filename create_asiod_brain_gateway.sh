@@ -8,7 +8,7 @@
   "status": true,
   {
   
-  "policy_version": "1.1",
+  "policy_version": "0.1.0",
   "numeric_formats_policy": {
     "ieee_754_governs_proof": false,
     "ieee_p3109_governs_proof": false,
@@ -31,10 +31,10 @@
     "exact_classification"
   ],
   "quarantine_trigger": "artifact_uses_numeric_format_as_proof_authority_only",
-  "status": "QUARANTINE"
+  "status": "QUARANTINE"<<json,
 }
 {
-  "display_policy_version": "1.2",
+  "display_policy_version": "0.1.0",
   "primary_authority": "constructible_exact_form",
   "decimal_authority": false,
   "decimal_first_authority": false,
