@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { uuidv4 } from 'uuid';
 
 const app = express();
+},
 
 const PORT = process.PORT || 4241;
 const APP_BASE_URL = process.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
