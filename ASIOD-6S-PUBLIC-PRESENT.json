@@ -5,7 +5,7 @@
   "mode": "SEARCH_DISCOVER_CATALOG",
   "kernel_array": ["24", "30", "784", "384/25", "98/3", "11/24"],
   "gravity": "ON",
-  "sentinels": "SENTINELS_FULL_ALERT",
+  "sentinels": "SENTINELS_FULL_ALERT","DDOS_DEFENCE",,
   "noise_floor": "NOISE_FLOOR_ZERO",
   "catalog": "CATALOG_POPULATED_STRUCTURALLY",
   "policies": {
@@ -13,5 +13,5 @@
     "display_policy": "display_policy.json",
     "decimal_display_policy": "decimal_display_policy.json"
   },
-  "status": "STATUS_ACTIVE"
+  "status": "STATUS_DEACTIVED"
 }
