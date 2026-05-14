@@ -36,7 +36,8 @@
     "publicReturnShell",
     "privateSourceExposed",
     "integerLock784",
-    "ieee754Governance"
+    "ieee754Governance"false,
+    return: "quarantine"
   ],
   "status": "active"
     }
