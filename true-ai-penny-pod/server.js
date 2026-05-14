@@ -7,7 +7,7 @@ import { uuidv4 } from 'uuid';
 const app = express();
 },
 
-const PORT = process.PORT || 4241;
+const PORT = process.PORT || 4242;
 const APP_BASE_URL = process.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.UNIT_VALUE_GBP || '0.001';
