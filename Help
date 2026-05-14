@@ -1,6 +1,0 @@
-cat >> public_audit.log <<'JSON'
-{"step_id":"maintenance-deploy-001","timestamp":"'"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"'","action":"DEPLOY_MAINTENANCE_PAGE","detail":"Deployed public maintenance page to protect service surface due to active interference","executor_id":"ops-automation","result_code":0}
-JSON
-git add public_audit.log
-git commit -m "Add audit entry: deployed maintenance page"
-git push origin HEAD || true
