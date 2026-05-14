@@ -10,12 +10,12 @@
     "issue_job_id_or_api_key",
     "deliver_full_correction_report",
     "issue_receipt",
-    "payout_to_bank"
+    "payout_to_stripe_pay"
   ],
   "free_layer": "limited_bridge_summary_only",
   "paid_layer": "full_verification_and_receipts",
   "payment_before_full_service": true,
-  "bank_account_role": "payout_destination_only",
+  "stripe_pay": "payout_destination_only",
   "private_source_exposed_publicly": false,
-  "status": "PAYMENT_GATE_REQUIRED_BEFORE_BANK_PAYOUT"
+  "status": "PAYMENT_STRIPE_PAY_ONLY"
 }
