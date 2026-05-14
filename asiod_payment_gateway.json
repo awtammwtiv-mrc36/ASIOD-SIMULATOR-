@@ -7,7 +7,7 @@
     "return_limited_preview",
     "show_paid_service_offer",
     "collect_payment",
-    "api_key",
+    "api_key_only",
     "deliver_full_correction_report",
     "issue_receipt",
     "payout_to_stripe_pay"
@@ -17,5 +17,5 @@
   "payment_before_full_service": true,
   "stripe_pay": "payout_destination_only",
   "private_source_exposed_publicly": false,
-  "status": "PAYMENT_STRIPE_PAY_ONLY"
+  "status": "PAYMENT_TO_STRIPE_PAY_ONLY"
 }
