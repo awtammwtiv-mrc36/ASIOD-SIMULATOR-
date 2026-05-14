@@ -29,7 +29,7 @@ paths:
       summary: One-time customer payment authority setup
       responses:
         "501":
-          description: Stripe setup layer not attached yet
+          description: Stripe attached
   /stripe/webhook:
     post:
       summary: Stripe webhook receiver
