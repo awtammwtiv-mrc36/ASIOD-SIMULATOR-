@@ -1,0 +1,64 @@
+{
+  "DISCOVERY": {
+    "step_id": "legacy-discovery-{{TIMESTAMP}}",
+    "timestamp": "{{TIMESTAMP_ISO}}",
+    "action": "DISCOVERY",
+    "detail": "Legacy/formalization references found and provenance captured for audit classification.",
+    "files_count": "{{FILES_COUNT}}",
+    "evidence_archive": "{{ARCHIVE_NAME}}",
+    "executor_id": "{{EXECUTOR_ID}}",
+    "result_code": 0
+  },
+  "QUARANTINE": {
+    "step_id": "legacy-quarantine-{{TIMESTAMP}}",
+    "timestamp": "{{TIMESTAMP_ISO}}",
+    "action": "QUARANTINE",
+    "detail": "Matched files archived for evidence. No source deletion performed.",
+    "archive_sha256": "{{ARCHIVE_SHA256}}",
+    "archive_signature": "{{ARCHIVE_SIG}}",
+    "executor_id": "{{EXECUTOR_ID}}",
+    "result_code": 0
+  },
+  "CONTAINMENT": {
+    "step_id": "legacy-containment-{{TIMESTAMP}}",
+    "timestamp": "{{TIMESTAMP_ISO}}",
+    "action": "CONTAINMENT",
+    "detail": "Legacy material contained to approved playground, audit, quarantine, or comparison paths. Protected engine and source-governance paths remain shielded.",
+    "affected_paths": ["{{AFFECTED_PATH}}"],
+    "approved_legacy_paths": [
+      "legacy_playground/",
+      "public_results/",
+      "legacy_discovery_output/",
+      "legacy_archives/"
+    ],
+    "protected_paths": [
+      "true-ai-penny-pod/",
+      ".github/workflows/",
+      "policy_manifest.json",
+      "display_policy.json",
+      "decimal_display_policy.json"
+    ],
+    "approvers": ["{{APPROVER_1}}", "{{APPROVER_2}}"],
+    "executor_id": "{{EXECUTOR_ID}}",
+    "result_code": 0
+  },
+  "DISABLE_GENERATOR": {
+    "step_id": "legacy-disable-{{TIMESTAMP}}",
+    "timestamp": "{{TIMESTAMP_ISO}}",
+    "action": "DISABLE_GENERATOR",
+    "detail": "Disabled a workflow or job only after confirming it produced unwanted output outside the approved playground/audit shell.",
+    "affected_workflows": ["{{WORKFLOW_PATH}}"],
+    "approvers": ["{{APPROVER_1}}", "{{APPROVER_2}}"],
+    "executor_id": "{{EXECUTOR_ID}}",
+    "result_code": 0
+  },
+  "RECONCILIATION": {
+    "step_id": "legacy-reconcile-{{TIMESTAMP}}",
+    "timestamp": "{{TIMESTAMP_ISO}}",
+    "action": "RECONCILIATION",
+    "detail": "Public-layer verification after containment. Legacy material remains audit/playground-only and does not govern the protected ASIOD layer.",
+    "status": "784_RETURN_CONFIRMED",
+    "executor_id": "{{EXECUTOR_ID}}",
+    "result_code": 0
+  }
+}
