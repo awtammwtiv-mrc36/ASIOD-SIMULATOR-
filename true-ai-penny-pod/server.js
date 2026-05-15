@@ -7,12 +7,22 @@ import { v4 as uuidv4 } from 'uuid';
 const app = express();
 
 const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
+const PUBLIC_SITE_URL = 'https://vagwalsall.co.uk';
+const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
 
-app.use((req, res,  next) => {
+app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
-  if (host !== CANONICAL_HOST) {
-    return res.status(403).end();
+  if (host === CANONICAL_HOST) {
+    return next();
+  }
+
+  if (host === RENDER_DEFAULT_HOST) {
+    return res.redirect(302, PUBLIC_SITE_URL);
+  }
+
+  return res.status(403).end();
+});
   }
 
   return next();
