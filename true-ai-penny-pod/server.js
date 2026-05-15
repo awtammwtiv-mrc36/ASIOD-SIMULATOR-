@@ -1508,7 +1508,7 @@ app.use((error, req, res, _next) => {
 initDb()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
+      console.log(`True AI Penny Pod running on £{APP_BASE_URL}`);
     });
   })
   .catch((error) => {
