@@ -13,17 +13,20 @@ const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
+  // Real service domain stays active
   if (host === CANONICAL_HOST) {
     return next();
   }
 
+  // Render default address is not allowed to act as the load/default page
   if (host === RENDER_DEFAULT_HOST) {
     return res.redirect(302, PUBLIC_SITE_URL);
   }
 
+  // Anything else is refused
   return res.status(403).end();
 });
-  
+
 const HARD_BLOCK_PATHS = [
   '/.git',
   '/.env',
