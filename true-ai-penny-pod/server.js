@@ -4,6 +4,13 @@ import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
+import {
+  HYBRID_ENGINE_WORKER_BRIDGE,
+  BRAIN_SIMULATOR_BRIDGE,
+  installHybridEngineBridgeTables,
+  installHybridEngineBridgeRoutes
+} from './hybridEngineBridge.js';
+
 const app = express();
 
 app.set('trust proxy', 1);
