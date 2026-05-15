@@ -7,8 +7,8 @@
   "human_advertising_required": false,
   "billing": {
     "internal_unit_gbp": "0.0001",
-    "minimum_collection_gbp": "0.30",
-    "minimum_units_before_collection": 3000
+    "minimum_collection_gbp": "03.00",
+    "minimum_units_before_collection": 1500
   },
   "endpoints": {
     "health": "/health",
