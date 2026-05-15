@@ -6,6 +6,56 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
+const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
+
+const HARD_BLOCK_PATHS = [
+  '/.git',
+  '/.env',
+  '/git/config',
+  '/config',
+  '/wp',
+  '/wordpress',
+  '/xmlrpc.php',
+  '/php',
+  '/vendor',
+  '/admin',
+  '/login',
+  '/cgi-bin',
+  '/server-status',
+  '/.well-known/security.txt'
+];
+
+const HARD_BLOCK_AGENTS = [
+  'Go-http-client',
+  'zgrab',
+  'masscan',
+  'nikto',
+  'sqlmap',
+  'python-requests',
+  'curl',
+  'wget'
+];
+
+app.use((req, res, next) => {
+  const path = String(req.path || '').toLowerCase();
+  const agent = String(req.get('user-agent') || '').toLowerCase();
+  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
+
+  const badPath = HARD_BLOCK_PATHS.some((blocked) =>
+    path === blocked || path.startsWith(`${blocked}/`) || path.includes(blocked)
+  );
+
+  const badAgent = HARD_BLOCK_AGENTS.some((blocked) =>
+    agent.includes(blocked.toLowerCase())
+  );
+
+  if (badPath || badAgent) {
+    return res.status(204).end();
+  }
+
+  return next();
+});
+
 const PORT = process.env.PORT || 4242;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
