@@ -429,9 +429,9 @@ function addLegacyCoins(req, reason, legacyCoins, statusReturned) {
 
   return event;
 }
-
-function securityHeaders(req, res, next) {
-  const requestId = req.get('client-id') || uuidv4();
+  
+function securityHeaders(_req, res, next) {
+  const requestId = uuidv4();
 
   res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -439,8 +439,8 @@ function securityHeaders(req, res, next) {
   res.setHeader('Cache-Control', 'no-store');
 
   return next();
-}
-
+  }
+  
 function quarantineGate(req, res, next) {
   const path = req.path;
   const userAgent = String(req.get('user-agent') || '').toLowerCase();
