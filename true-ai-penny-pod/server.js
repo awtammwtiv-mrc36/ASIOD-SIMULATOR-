@@ -26,7 +26,6 @@ const HARD_BLOCK_PATHS = [
 ];
 
 const HARD_BLOCK_AGENTS = [
-  'Go-http-client',
   'zgrab',
   'masscan',
   'nikto',
@@ -230,7 +229,6 @@ const QUIET_PUBLIC_PATHS = Object.freeze(new Set([
 const BLOCKED_AGENTS = Object.freeze([
   'CMS-Checker',
   'weft-search-triage',
-  'Go-http-client',
   'SkypeUriPreview'
 ]);
 
@@ -965,13 +963,8 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: '128k
 app.get('/', (_req, res) => {
   return res.status(200).json({
     ok: true,
-    shell: SHELL_REGISTRY.freeFrontDoor.shellSerial,
-    route: 'two-string-free-tier',
-    privateSourceExposed: false,
-    privateSourceSerialPublic: false,
-    cataloguePublic: false,
-    paymentPublic: false,
-    integerLock784: true
+    service: 'True AI Penny Pod',
+    status: 'live'
   });
 });
 
