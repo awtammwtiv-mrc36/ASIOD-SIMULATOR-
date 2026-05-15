@@ -73,7 +73,7 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4242;
-const APP_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
+const APP_INTERNAL_BASE_URL = process.env.APP_BASE_URL || 'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
