@@ -2,9 +2,9 @@
   "name": "penny-ai-pod",
   "version": "1.0.0",
   "type": "module",
-  "main": "server.js",
+  "main": "true-ai-penny-pod/server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node true-ai-penny-pod/server.js"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",
@@ -12,5 +12,6 @@
     "express": "^4.19.2",
     "pg": "^8.13.1",
     "stripe": "^16.0.0",
-    "uuid": "^10.0.0",
+    "uuid": "^10.0.0"
   }
+}
