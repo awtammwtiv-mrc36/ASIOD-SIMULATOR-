@@ -1561,6 +1561,9 @@ initDb()
       console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
     });
   })
+  app.use((_req, res) => {
+  return res.status(204).end();
+});
   .catch((error) => {
     console.error('Startup failed', error);
     process.exit(1);
