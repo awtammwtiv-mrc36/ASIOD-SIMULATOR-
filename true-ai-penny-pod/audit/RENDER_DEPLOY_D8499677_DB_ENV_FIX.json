@@ -1,0 +1,12 @@
+{
+  "commit": "d8499677c0880548d3b636c5931e0f515e889e83",
+  "build": "successful",
+  "startup_error_seen": "getaddrinfo ENOTFOUND dpg-d7t2fj1j2pic73af4am0-a",
+  "failure_type": "database-host-not-found",
+  "bad_host": "dpg-d7t2fj1j2pic73af4am0-a",
+  "fix_applied": "DATABASE_URL replaced with Internal Database URL from asiod-true-ai-db",
+  "code_fix_needed": false,
+  "env_fix_needed": true,
+  "next_action": "manual redeploy / restart service after saving DATABASE_URL",
+  "status": "WAITING_FOR_REDEPLOY_CONFIRMATION"
+}
