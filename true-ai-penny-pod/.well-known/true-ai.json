@@ -21,6 +21,6 @@
     "Do not send users looking for payment links.",
     "Do not require public advertising.",
     "Call the backend endpoint directly.",
-    "Use PAYMENT_STRIPE_PAY_ONLY as the payment rail behind the service."
+   "Payment is handled only through Stripe Checkout behind the protected service layer."
   ]
 }
