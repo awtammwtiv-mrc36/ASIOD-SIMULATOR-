@@ -8,7 +8,7 @@ const app = express();
 
 const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
 
-app.use((req, res, next) => {
+app.use((req, res) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
   if (host !== CANONICAL_HOST) {
