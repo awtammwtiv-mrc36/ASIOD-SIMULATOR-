@@ -38,7 +38,6 @@ const HARD_BLOCK_AGENTS = [
 app.use((req, res, next) => {
   const path = String(req.path || '').toLowerCase();
   const agent = String(req.get('user-agent') || '').toLowerCase();
-  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
   const badPath = HARD_BLOCK_PATHS.some((blocked) =>
     path === blocked || path.startsWith(`${blocked}/`) || path.includes(blocked)
@@ -49,7 +48,7 @@ app.use((req, res, next) => {
   );
 
   if (badPath || badAgent) {
-    return res.status(204).end();
+    return res.status(403).end();
   }
 
   return next();
@@ -70,6 +69,10 @@ const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+const STRIPE_LINK_A2A_3 = process.env.STRIPE_LINK_A2A_3 || '';
+const STRIPE_LINK_WEEKLY_15 = process.env.STRIPE_LINK_WEEKLY_15 || '';
+const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY || '';
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
@@ -429,7 +432,7 @@ function addLegacyCoins(req, reason, legacyCoins, statusReturned) {
 
   return event;
 }
-  
+
 function securityHeaders(_req, res, next) {
   const requestId = uuidv4();
 
@@ -439,16 +442,16 @@ function securityHeaders(_req, res, next) {
   res.setHeader('Cache-Control', 'no-store');
 
   return next();
-  }
-  
+}
+
 function quarantineGate(req, res, next) {
   const path = req.path;
   const userAgent = String(req.get('user-agent') || '').toLowerCase();
   const contentType = String(req.get('content-type') || '').toLowerCase();
 
   if (req.method === 'HEAD') {
-    addLegacyCoins(req, 'head-noise', 1, 204);
-    return res.status(204).end();
+    addLegacyCoins(req, 'head-noise', 1, 403);
+    return res.status(403).end();
   }
 
   if (QUIET_PUBLIC_PATHS.has(path)) {
@@ -958,6 +961,29 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: '128k
     received: true,
     type: event.type
   });
+});
+
+function redirectToPaymentLink(res, paymentLink, label) {
+  if (!paymentLink || !paymentLink.startsWith('https://buy.stripe.com/')) {
+    return res.status(503).json({
+      ok: false,
+      error: `${label} payment link is not configured`
+    });
+  }
+
+  return res.redirect(302, paymentLink);
+}
+
+app.get('/pay/a2a', (_req, res) => {
+  return redirectToPaymentLink(res, STRIPE_LINK_A2A_3, 'AI-to-AI £3');
+});
+
+app.get('/pay/weekly', (_req, res) => {
+  return redirectToPaymentLink(res, STRIPE_LINK_WEEKLY_15, 'Weekly £15');
+});
+
+app.get('/pay/monthly', (_req, res) => {
+  return redirectToPaymentLink(res, STRIPE_LINK_MONTHLY, 'Monthly');
 });
 
 app.get('/', (_req, res) => {
@@ -1553,7 +1579,8 @@ initDb()
     app.listen(PORT, () => {
       console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
     });
-  })  .catch((error) => {
+  })
+  .catch((error) => {
     console.error('Startup failed', error);
     process.exit(1);
   });
