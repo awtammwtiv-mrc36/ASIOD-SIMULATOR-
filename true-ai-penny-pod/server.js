@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
 const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
 
@@ -47,7 +49,8 @@ const HARD_BLOCK_AGENTS = [
   'sqlmap',
   'python-requests',
   'curl',
-  'wget'
+  'wget',
+  'go-http-client'
 ];
 
 app.use((req, res, next) => {
@@ -96,6 +99,13 @@ const localReceipts = new Map();
 const localQuotes = new Map();
 const localOrders = new Map();
 const rateBuckets = new Map();
+
+const BLOCKED_IPS = new Set(
+  String(process.env.BLOCKED_IPS || '')
+    .split(',')
+    .map((ip) => ip.trim())
+    .filter(Boolean)
+);
 
 const legacyCoinLedger = [];
 const legacyCoinTotals = new Map();
@@ -247,7 +257,8 @@ const QUIET_PUBLIC_PATHS = Object.freeze(new Set([
 const BLOCKED_AGENTS = Object.freeze([
   'CMS-Checker',
   'weft-search-triage',
-  'SkypeUriPreview'
+  'SkypeUriPreview',
+  'Go-http-client'
 ]);
 
 function toMoneyNumber(value, fallback = 0) {
@@ -289,7 +300,27 @@ function getServiceById(serviceId) {
 }
 
 function getClientIp(req) {
-  return req.socket?.remoteAddress || req.ip || 'client';
+  const forwardedFor = String(req.get('x-forwarded-for') || '');
+  const firstForwardedIp = forwardedFor.split(',')[0].trim();
+
+  const rawIp =
+    firstForwardedIp ||
+    req.ip ||
+    req.socket?.remoteAddress ||
+    'client';
+
+  return String(rawIp).replace(/^::ffff:/, '');
+}
+
+function ipDenyGate(req, res, next) {
+  const ip = getClientIp(req);
+
+  if (BLOCKED_IPS.has(ip)) {
+    addLegacyCoins(req, 'blocked-ip', 250, 403);
+    return res.status(403).end();
+  }
+
+  return next();
 }
 
 function constantTimeEquals(a, b) {
@@ -465,6 +496,10 @@ function quarantineGate(req, res, next) {
   const contentType = String(req.get('content-type') || '').toLowerCase();
 
   if (req.method === 'HEAD') {
+    if (path === '/' || path === '/health' || path === '/api/health') {
+      return next();
+    }
+
     addLegacyCoins(req, 'head-noise', 1, 403);
     return res.status(403).end();
   }
@@ -500,10 +535,10 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
-    : 600000;
+    : 60000;
   const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
     ? RATE_LIMIT_MAX
-    : 1200;
+    : 120;
 
   const bucketKey = `${getClientIp(req)}:${req.path}`;
   const existing = rateBuckets.get(bucketKey);
@@ -948,6 +983,7 @@ async function initDb() {
 }
 
 app.use(securityHeaders);
+app.use(ipDenyGate);
 app.use(quarantineGate);
 app.use(rateLimit);
 
