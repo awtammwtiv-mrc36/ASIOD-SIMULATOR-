@@ -23,10 +23,7 @@ app.use((req, res, next) => {
 
   return res.status(403).end();
 });
-  }
-
-  return next();
-});
+  
 const HARD_BLOCK_PATHS = [
   '/.git',
   '/.env',
