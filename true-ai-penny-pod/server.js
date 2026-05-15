@@ -5,25 +5,23 @@ import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
-
 const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
-const PUBLIC_SITE_URL = 'https://vagwalsall.co.uk';
 const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
 
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
-  // Real service domain stays active
+  // Real business service door
   if (host === CANONICAL_HOST) {
     return next();
   }
 
-  // Render default address is not allowed to act as the load/default page
+  // Render default door is a dead/wrong door
   if (host === RENDER_DEFAULT_HOST) {
-    return res.redirect(302, PUBLIC_SITE_URL);
+    return res.status(410).send('Gone');
   }
 
-  // Anything else is refused
+  // Unknown host
   return res.status(403).end();
 });
 
