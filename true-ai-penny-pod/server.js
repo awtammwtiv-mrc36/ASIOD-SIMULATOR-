@@ -11,17 +11,14 @@ const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
 
-  // Real business service door
   if (host === CANONICAL_HOST) {
     return next();
   }
 
-  // Render default door is a dead/wrong door
   if (host === RENDER_DEFAULT_HOST) {
     return res.status(410).send('Gone');
   }
 
-  // Unknown host
   return res.status(403).end();
 });
 
