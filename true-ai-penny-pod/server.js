@@ -284,6 +284,8 @@ const QUIET_PUBLIC_PATHS = Object.freeze(new Set([
 const BLOCKED_AGENTS = Object.freeze([
   'CMS-Checker',
   'weft-search-triage',
+  'weft-search-ingest',
+  'weftlabs',
   'SkypeUriPreview',
   'Go-http-client'
 ]);
