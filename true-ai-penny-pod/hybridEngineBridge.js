@@ -46,7 +46,7 @@ const DEFAULT_FUNNEL_MAX_AGE_MS = 300000;
 const DEFAULT_FUNNEL_BODY_LIMIT = '64kb';
 
 function getFunnelSecret() {
-  return String(process.env.FUNNEL_WEBHOOK_SECRET || '');
+  return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
 }
 
 function getFunnelMaxAgeMs() {
