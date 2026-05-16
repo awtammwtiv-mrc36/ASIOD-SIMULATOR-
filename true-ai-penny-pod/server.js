@@ -58,6 +58,7 @@ const HARD_BLOCK_AGENTS = [
   'curl',
   'wget',
   'go-http-client'
+  'weftlabs'
 ];
 
 app.use((req, res, next) => {
