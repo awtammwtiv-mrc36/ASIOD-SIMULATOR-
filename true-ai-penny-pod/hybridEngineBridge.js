@@ -793,6 +793,6 @@ export function installHybridEngineBridgeRoutes({
         count: result.rows.length,
         packets: result.rows,
         privateSourceExposed: false
-      });
-    }));
+     }));  
   }
+}
