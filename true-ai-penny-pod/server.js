@@ -57,7 +57,8 @@ const HARD_BLOCK_AGENTS = [
   'python-requests',
   'curl',
   'wget',
-  'go-http-client'
+  'go-http-client',
+  'weft-search-ingest',
   'weftlabs'
 ];
 
