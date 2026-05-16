@@ -102,9 +102,9 @@ function buildFunnelSignature({ timestamp, rawBody, secret }) {
 }
 
 function verifySignedPacket({ req, rawBody, constantTimeEquals }) {
-  const secret = getFunnelSecret();
+  const secrets = getFunnelSecrets();
 
-  if (!secret) {
+  if (secrets.length === 0) {
     return {
       ok: false,
       status: 503,
@@ -134,15 +134,19 @@ function verifySignedPacket({ req, rawBody, constantTimeEquals }) {
     };
   }
 
-  const expectedSignature = buildFunnelSignature({
-    timestamp,
-    rawBody,
-    secret
-  });
-
   const equals = constantTimeEquals || fallbackConstantTimeEquals;
 
-  if (!equals(suppliedSignature, expectedSignature)) {
+  const matched = secrets.some((secret) => {
+    const expectedSignature = buildFunnelSignature({
+      timestamp,
+      rawBody,
+      secret
+    });
+
+    return equals(suppliedSignature, expectedSignature);
+  });
+
+  if (!matched) {
     return {
       ok: false,
       status: 401,
