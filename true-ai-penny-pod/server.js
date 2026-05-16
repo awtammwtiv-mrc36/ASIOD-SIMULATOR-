@@ -80,7 +80,11 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4242;
-const APP_BASE_URL = process.env.APP_INTERNAL_BASE_URL || 'https://a2a.vagwalsall.co.uk';
+
+const APP_BASE_URL =
+  process.env.APP_BASE_URL ||
+  process.env.APP_INTERNAL_BASE_URL ||
+  'https://a2a.vagwalsall.co.uk';
 
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
@@ -123,28 +127,36 @@ const SHELL_REGISTRY = Object.freeze({
     role: 'free-two-string-front-door',
     status: 'limited',
     shatterable: true,
-    privateSourceExposed: false
+    privateSourceExposed: false,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE
   },
   externalPublicLayer: {
     shellSerial: 'ASIOD-SHELL-002-PUBLIC-6FIELD',
     role: 'public-six-field-external-shell',
     status: 'sealed',
     shatterable: true,
-    privateSourceExposed: false
+    privateSourceExposed: false,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE
   },
   paidOrderLayer: {
     shellSerial: 'ASIOD-SHELL-003-PAID-ORDER',
     role: 'paid-order-and-stripe-shell',
     status: 'sealed',
     shatterable: true,
-    privateSourceExposed: false
+    privateSourceExposed: false,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE
   },
   privateSourceLayer: {
     role: 'sealed-background-only',
     status: 'sealed',
     shatterable: false,
     privateSourceExposed: false,
-    publicSerial: false
+    publicSerial: false,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE
   }
 });
 
@@ -157,6 +169,12 @@ const PUBLIC_API_SHELL = Object.freeze({
   directPrivateSourceAccess: false,
   publicPrivateSourceRoutes: false,
   privateSourceSerialPublic: false,
+  hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE,
+  brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE,
+  localWorkerNodeSupported: true,
+  publicInboundToWorker: false,
+  workerPollingEnabled: true,
+  brainSimulatorBridgePublicAccess: false,
   integerLock784: true,
   ieee754Governance: false,
   decimalAuthority: false,
@@ -434,12 +452,27 @@ function buildPublicApiAgentCard() {
       services: '/api/services',
       agent_card: '/api/agent-card',
       true_ai_manifest: '/.well-known/true-ai.json',
-      agent_manifest: '/.well-known/agent-card.json'
+      agent_manifest: '/.well-known/agent-card.json',
+      funnel_intake: '/api/funnel/intake',
+      worker_heartbeat: '/api/worker/heartbeat',
+      worker_poll: '/api/worker/poll',
+      worker_claim: '/api/worker/claim',
+      worker_result: '/api/worker/result'
     },
     security: {
       publicRoutesLimited: true,
       protectedRoutesRequireShellKey: true,
+      signedBridgePacketsRequired: true,
+      publicInboundToWorker: false,
+      localWorkerNodeSupported: true,
       shellKeyHeaders: ['client-api-key', 'business-api-key'],
+      bridgeHeaders: [
+        'x-asiod-agent',
+        'x-asiod-device',
+        'x-asiod-channel',
+        'x-asiod-timestamp',
+        'x-asiod-signature'
+      ],
       bearerTokenAccepted: false,
       receiptLookupPublic: false,
       ordersPublic: false,
@@ -458,6 +491,7 @@ function buildPublicApiAgentCard() {
       'No public route returns private source material.',
       'No secret key, database URL, Stripe key, webhook secret, or internal credential is returned.',
       'Receipts, orders, pod routes, brain routes, intakes, quotes, and payment creation require client-api-key or business-api-key.',
+      'Hybrid bridge routes require signed HMAC packets from the local worker device.',
       'Stripe webhook is public only for Stripe delivery and is signature-verified.'
     ]
   };
@@ -986,6 +1020,8 @@ async function initDb() {
     );
   `);
 
+  await installHybridEngineBridgeTables(pool);
+
   console.log('Catalogue database ready.');
 }
 
@@ -1060,7 +1096,9 @@ app.get('/health', (_req, res) => {
     status: 'live',
     privateSourceExposed: false,
     privateSourceSerialPublic: false,
-    integerLock784: true
+    integerLock784: true,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial
   });
 });
 
@@ -1088,6 +1126,8 @@ app.get('/api/services', (_req, res) => {
     privateSourceExposed: false,
     cataloguePublic: false,
     paymentPublic: false,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
     message: 'Public service discovery is limited to the two-string free tier.'
   });
 });
@@ -1112,7 +1152,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
   return res.status(200).json({
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
-    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, and authorised shattered-file recovery intake.',
+    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, hybrid worker dispatch, and authorised shattered-file recovery intake.',
     url: APP_BASE_URL,
     provider: {
       organization: 'Jt Browne / ASIOD784'
@@ -1124,8 +1164,8 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
       stateTransitionHistory: true
     },
     authentication: {
-      schemes: ['apiKey'],
-      description: 'Protected routes require client-api-key or business-api-key.'
+      schemes: ['apiKey', 'signed-hmac-packet'],
+      description: 'Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
@@ -1605,6 +1645,17 @@ app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
     message: 'Shattered file record stored.'
   });
 }));
+
+installHybridEngineBridgeRoutes({
+  app,
+  pool,
+  protectedNoBody,
+  writeCatalogueRecord,
+  getClientIp,
+  constantTimeEquals,
+  addLegacyCoins,
+  shellRegistry: SHELL_REGISTRY
+});
 
 app.use((req, res) => {
   addLegacyCoins(req, 'final-not-found', 5, 404);
