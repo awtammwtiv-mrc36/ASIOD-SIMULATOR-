@@ -943,7 +943,121 @@ async function createStripeCheckoutForOrder(order) {
   });
 
   return order.payment;
+    }
 
+async function handleApiIntake(channel, req, res) {
+  try {
+    const incomingBody = req.body || {};
+    const jobId = `job_${uuidv4()}`;
+    const packetId = `packet_${uuidv4()}`;
+    const targetWorker = String(
+      incomingBody.targetWorker ||
+      incomingBody.workerId ||
+      'windows-laptop-worker-01'
+    );
+
+    const receipt = await createApiReceipt(channel, {
+      ...incomingBody,
+      jobId,
+      packetId,
+      targetWorker,
+      source: `${channel}-webcard`,
+      shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+      shellStatus: SHELL_REGISTRY.externalPublicLayer.status
+    });
+
+    const jobRecord = {
+      ...incomingBody,
+      jobId,
+      packetId,
+      channel,
+      targetWorker,
+      source: `${channel}-webcard`,
+      route: 'webcard-to-local-worker',
+      receiptId: receipt.receiptId,
+      shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+      shellStatus: SHELL_REGISTRY.externalPublicLayer.status,
+      hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
+      brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
+      privateSourceExposed: false,
+      receivedAt: new Date().toISOString()
+    };
+
+    if (pool) {
+      await pool.query(
+        `insert into worker_jobs (
+          id,
+          target_worker,
+          processing_mode,
+          status,
+          body
+        )
+        values ($1, $2, 'local-worker', 'queued', $3)
+        on conflict (id) do update
+        set target_worker = excluded.target_worker,
+            processing_mode = excluded.processing_mode,
+            status = 'queued',
+            body = excluded.body`,
+        [jobId, targetWorker, jobRecord]
+      );
+
+      await pool.query(
+        `insert into bridge_packets (
+          id,
+          device_id,
+          direction,
+          packet_type,
+          status,
+          body
+        )
+        values ($1, $2, 'in', $3, 'queued', $4)
+        on conflict (id) do update
+        set device_id = excluded.device_id,
+            direction = excluded.direction,
+            packet_type = excluded.packet_type,
+            status = 'queued',
+            body = excluded.body`,
+        [packetId, targetWorker, channel, jobRecord]
+      );
+
+      await writeCatalogueRecord({
+        id: `cat_${jobId}`,
+        agentId: channel,
+        recordType: `api_${channel}_worker_job`,
+        title: `A2A worker job queued: ${jobId}`,
+        body: jobRecord,
+        units: Number(incomingBody.units || 0)
+      });
+    }
+
+    return res.status(202).json({
+      ok: true,
+      channel,
+      status: 'queued',
+      jobId,
+      packetId,
+      targetWorker,
+      receiptId: receipt.receiptId,
+      workerQueueStored: Boolean(pool),
+      source: `${channel}-webcard`,
+      next: {
+        workerPoll: '/api/worker/poll',
+        workerResult: '/api/worker/result'
+      },
+      privateSourceExposed: false
+    });
+  } catch (error) {
+    console.error(`API intake failed for ${channel}:`, error);
+
+    return res.status(500).json({
+      ok: false,
+      channel,
+      error: 'ASIOD-SHELL-001-FREE-2STR',
+      privateSourceExposed: false
+    });
+  }
+}
+  
 async function initDb() {
   if (!pool) {
     console.log('DATABASE_URL not set. Catalogue database disabled.');
