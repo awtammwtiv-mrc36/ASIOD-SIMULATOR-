@@ -1189,9 +1189,19 @@ function fastDropGate(req, res, next) {
 
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
 
-  if (blockedAgent && !['/health', '/api/health', '/stripe/webhook'].includes(path)) {
-    return silentDrop(res);
-  }
+const blockedAgentAllowedPaths = new Set([
+  '/health',
+  '/api/health',
+  '/api/agent-card',
+  '/api/services',
+  '/.well-known/agent-card.json',
+  '/.well-known/true-ai.json',
+  '/stripe/webhook'
+]);
+
+if (blockedAgent && !blockedAgentAllowedPaths.has(path)) {
+  return silentDrop(res);
+}
 
   return next();
 }
