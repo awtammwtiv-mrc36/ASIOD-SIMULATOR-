@@ -1164,7 +1164,7 @@ function hostGate(req, res, next) {
 
   console.warn(`[HOST_BLOCK] host=${host || 'missing'} method=${req.method} path=${req.originalUrl}`);
   return res.status(403).end();
-        }
+}
 
 function fastDropGate(req, res, next) {
   const path = cleanRequestPath(req.path || '/');
