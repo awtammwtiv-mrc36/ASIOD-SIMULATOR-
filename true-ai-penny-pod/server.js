@@ -4,35 +4,155 @@ import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
-import {
-  HYBRID_ENGINE_WORKER_BRIDGE,
-  BRAIN_SIMULATOR_BRIDGE,
-  installHybridEngineBridgeTables,
-  installHybridEngineBridgeRoutes
-} from './hybridEngineBridge.js';
+let HYBRID_ENGINE_WORKER_BRIDGE = Object.freeze({
+  bridgeSerial: 'HYBRID-ENGINE-WORKER-BRIDGE-FALLBACK',
+  status: 'fallback-active',
+  privateSourceExposed: false
+});
+
+let BRAIN_SIMULATOR_BRIDGE = Object.freeze({
+  bridgeSerial: 'BRAIN-SIMULATOR-BRIDGE-FALLBACK',
+  status: 'fallback-active',
+  privateSourceExposed: false
+});
+
+let installHybridEngineBridgeTables = async function installFallbackBridgeTables(pool) {
+  if (!pool) return false;
+
+  await pool.query(`
+    create table if not exists worker_nodes (
+      id text primary key,
+      device_id text unique,
+      status text not null default 'active',
+      last_seen_at timestamptz,
+      body jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists worker_jobs (
+      id text primary key,
+      target_worker text,
+      processing_mode text not null default 'local-worker',
+      status text not null default 'queued',
+      body jsonb not null default '{}'::jsonb,
+      result jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists bridge_packets (
+      id text primary key,
+      device_id text,
+      direction text not null default 'in',
+      packet_type text,
+      status text not null default 'queued',
+      body jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    );
+  `);
+
+  return true;
+};
+
+let installHybridEngineBridgeRoutes = null;
+
+try {
+  const bridgeModule = await import('./hybridEngineBridge.js');
+
+  if (bridgeModule.HYBRID_ENGINE_WORKER_BRIDGE) {
+    HYBRID_ENGINE_WORKER_BRIDGE = bridgeModule.HYBRID_ENGINE_WORKER_BRIDGE;
+  }
+
+  if (bridgeModule.BRAIN_SIMULATOR_BRIDGE) {
+    BRAIN_SIMULATOR_BRIDGE = bridgeModule.BRAIN_SIMULATOR_BRIDGE;
+  }
+
+  if (typeof bridgeModule.installHybridEngineBridgeTables === 'function') {
+    installHybridEngineBridgeTables = bridgeModule.installHybridEngineBridgeTables;
+  }
+
+  if (typeof bridgeModule.installHybridEngineBridgeRoutes === 'function') {
+    installHybridEngineBridgeRoutes = bridgeModule.installHybridEngineBridgeRoutes;
+  }
+} catch (error) {
+  console.warn('hybridEngineBridge.js not loaded. Fallback worker bridge active.');
+}
 
 const app = express();
 
 app.set('trust proxy', 1);
 
-const CANONICAL_HOST = 'a2a.vagwalsall.co.uk';
-const RENDER_DEFAULT_HOST = 'asiod-true-ai-penny-pod.onrender.com';
+const PORT = process.env.PORT || 4242;
 
-app.use((req, res, next) => {
-  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
+const CANONICAL_HOST = process.env.CANONICAL_HOST || 'a2a.vagwalsall.co.uk';
+const RENDER_DEFAULT_HOST = process.env.RENDER_DEFAULT_HOST || 'asiod-true-ai-penny-pod.onrender.com';
+const BLOCK_RENDER_DEFAULT_HOST = process.env.BLOCK_RENDER_DEFAULT_HOST !== 'false';
 
-  if (host === CANONICAL_HOST) {
-    return next();
-  }
+const APP_BASE_URL =
+  process.env.APP_BASE_URL ||
+  process.env.APP_INTERNAL_BASE_URL ||
+  'https://a2a.vagwalsall.co.uk';
 
-  if (host === RENDER_DEFAULT_HOST) {
-    return res.status(410).send('Gone');
-  }
+const EXTRA_ALLOWED_HOSTS = new Set(
+  String(process.env.EXTRA_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean)
+);
 
-  return res.status(403).end();
-});
+const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
+const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
 
-const FAST_DROP_PATHS = [
+const DATABASE_URL = process.env.DATABASE_URL;
+const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
+const BUSINESS_API_KEY = process.env.BUSINESS_API_KEY;
+
+const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
+const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
+
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+const STRIPE_LINK_A2A_3 = process.env.STRIPE_LINK_A2A_3 || '';
+const STRIPE_LINK_WEEKLY_15 = process.env.STRIPE_LINK_WEEKLY_15 || '';
+const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY || '';
+
+const ADS_TXT = process.env.ADS_TXT || '';
+
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+
+const localReceipts = new Map();
+const localQuotes = new Map();
+const localOrders = new Map();
+const rateBuckets = new Map();
+
+const legacyCoinLedger = [];
+const legacyCoinTotals = new Map();
+
+function normaliseIp(value) {
+  return String(value || '')
+    .replace(/^::ffff:/, '')
+    .trim();
+}
+
+const BLOCKED_IPS = new Set(
+  String(process.env.BLOCKED_IPS || '')
+    .split(',')
+    .map((ip) => normaliseIp(ip))
+    .filter(Boolean)
+);
+
+const BLOCKED_IP_PREFIXES = String(process.env.BLOCKED_IP_PREFIXES || '')
+  .split(',')
+  .map((ip) => normaliseIp(ip))
+  .filter(Boolean);
+
+const FAST_DROP_PATHS = Object.freeze([
   '/.git',
   '/.env',
   '/git/config',
@@ -68,10 +188,13 @@ const FAST_DROP_PATHS = [
   '/database',
   '/aws',
   '/credentials',
-  '/id_rsa'
-];
+  '/id_rsa',
+  '/server.js',
+  '/package.json',
+  '/node_modules'
+]);
 
-const FAST_DROP_AGENTS = [
+const FAST_DROP_AGENTS = Object.freeze([
   'zgrab',
   'masscan',
   'nikto',
@@ -83,27 +206,48 @@ const FAST_DROP_AGENTS = [
   'weft-search-ingest',
   'weft-search-triage',
   'weft-search-fetcher',
-  'weftlabs'
-];
+  'weftlabs',
+  'cms-checker'
+]);
 
 const ALLOWED_EXACT_PATHS = new Set([
   '/',
   '/health',
+
+  '/intake',
+  '/intake/a2a',
+  '/intake/b2b',
+  '/intake/crypto',
+  '/intake/public',
+
+  '/adverts',
+  '/ads',
+  '/advertise',
+  '/ads.txt',
+  '/robots.txt',
+  '/sitemap.xml',
+  '/favicon.ico',
+  '/favicon.png',
+
   '/api/health',
   '/api/agent-card',
   '/api/services',
   '/.well-known/true-ai.json',
   '/.well-known/agent-card.json',
+
   '/stripe/webhook',
+
   '/pay/a2a',
   '/pay/weekly',
   '/pay/monthly',
+
   '/api/quote',
   '/api/order/create',
   '/api/brain/test',
   '/api/b2b/intake',
   '/api/a2a/intake',
   '/api/crypto/intake',
+
   '/pod/b2b/client/create',
   '/pod/work/start',
   '/pod/work/complete',
@@ -111,9 +255,11 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/pod/catalogue/write',
   '/pod/catalogue/recent',
   '/pod/shattered-file/receive',
+
   '/pod/worker/nodes',
   '/pod/worker/jobs/recent',
   '/pod/bridge/packets/recent',
+
   '/api/funnel/intake',
   '/api/worker/heartbeat',
   '/api/worker/poll',
@@ -125,93 +271,6 @@ const ALLOWED_DYNAMIC_PREFIXES = [
   '/api/order/',
   '/api/receipt/'
 ];
-
-function isAllowedPath(path) {
-  const cleanPath = String(path || '/').toLowerCase();
-
-  return (
-    ALLOWED_EXACT_PATHS.has(cleanPath) ||
-    ALLOWED_DYNAMIC_PREFIXES.some((prefix) => cleanPath.startsWith(prefix))
-  );
-}
-
-function silentDrop(res) {
-  return res.status(204).end();
-}
-
-app.use((req, res, next) => {
-  const path = String(req.path || '/').toLowerCase();
-  const agent = String(req.get('user-agent') || '').toLowerCase();
-
-  const blockedPath = FAST_DROP_PATHS.some((blocked) =>
-    path === blocked ||
-    path.startsWith(`${blocked}/`) ||
-    path.includes(`${blocked}/`) ||
-    path.includes(blocked)
-  );
-
-  if (blockedPath) {
-    return silentDrop(res);
-  }
-
-  const allowedPath = isAllowedPath(path);
-
-  if (!allowedPath) {
-    return silentDrop(res);
-  }
-
-  const blockedAgent = FAST_DROP_AGENTS.some((blocked) =>
-    agent.includes(blocked)
-  );
-
-  if (blockedAgent && !allowedPath) {
-    return silentDrop(res);
-  }
-
-  return next();
-});
-
-const PORT = process.env.PORT || 4242;
-
-const APP_BASE_URL =
-  process.env.APP_BASE_URL ||
-  process.env.APP_INTERNAL_BASE_URL ||
-  'https://a2a.vagwalsall.co.uk';
-
-const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
-const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
-
-const DATABASE_URL = process.env.DATABASE_URL;
-const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
-const BUSINESS_API_KEY = process.env.BUSINESS_API_KEY;
-
-const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
-const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
-
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-
-const STRIPE_LINK_A2A_3 = process.env.STRIPE_LINK_A2A_3 || '';
-const STRIPE_LINK_WEEKLY_15 = process.env.STRIPE_LINK_WEEKLY_15 || '';
-const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY || '';
-
-const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
-
-const localReceipts = new Map();
-const localQuotes = new Map();
-const localOrders = new Map();
-const rateBuckets = new Map();
-
-const BLOCKED_IPS = new Set(
-  String(process.env.BLOCKED_IPS || '')
-    .split(',')
-    .map((ip) => ip.trim())
-    .filter(Boolean)
-);
-
-const legacyCoinLedger = [];
-const legacyCoinTotals = new Map();
 
 const SHELL_REGISTRY = Object.freeze({
   freeFrontDoor: {
@@ -348,37 +407,63 @@ const SERVICE_CATALOGUE = Object.freeze([
   }
 ]);
 
-const BLOCKED_ATTACK_PATHS = Object.freeze([
-  '/.env',
-  '/admin',
-  '/wp-',
-  '/xmlrpc.php',
-  '/php',
-  '/backup',
-  '/tmp',
-  '/.git',
-  '/config',
-  '/server.js',
-  '/package.json',
-  '/node_modules'
-]);
+const PUBLIC_FORM_BODY = express.urlencoded({
+  extended: false,
+  limit: '24kb'
+});
 
-const QUIET_PUBLIC_PATHS = Object.freeze(new Set([
-  '/favicon.ico',
-  '/favicon.png',
-  '/robots.txt',
-  '/ads.txt',
-  '/sitemap.xml'
-]));
+const LOCKED_JSON_BODY_LIMIT = '32kb';
 
-const BLOCKED_AGENTS = Object.freeze([
-  'CMS-Checker',
-  'weft-search-triage',
-  'weft-search-ingest',
-  'weftlabs',
-  'SkypeUriPreview',
-  'Go-http-client'
-]);
+const lockedJsonBody = express.json({
+  limit: LOCKED_JSON_BODY_LIMIT,
+  type: 'application/json'
+});
+
+function normaliseHost(value) {
+  return String(value || '')
+    .split(':')[0]
+    .trim()
+    .toLowerCase();
+}
+
+function getClientIp(req) {
+  const forwardedFor = String(req.get('x-forwarded-for') || '');
+  const firstForwardedIp = forwardedFor.split(',')[0].trim();
+
+  return normaliseIp(
+    firstForwardedIp ||
+    req.ip ||
+    req.socket?.remoteAddress ||
+    'client'
+  );
+}
+
+function isLocalHost(host) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function isAllowedHost(host) {
+  return host === CANONICAL_HOST || EXTRA_ALLOWED_HOSTS.has(host) || isLocalHost(host);
+}
+
+function cleanRequestPath(path) {
+  return String(path || '/')
+    .split('?')[0]
+    .toLowerCase();
+}
+
+function isAllowedPath(path) {
+  const cleanPath = cleanRequestPath(path);
+
+  return (
+    ALLOWED_EXACT_PATHS.has(cleanPath) ||
+    ALLOWED_DYNAMIC_PREFIXES.some((prefix) => cleanPath.startsWith(prefix))
+  );
+}
+
+function silentDrop(res) {
+  return res.status(204).end();
+}
 
 function toMoneyNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -416,30 +501,6 @@ function getMinimumUnitsBeforeCollection() {
 
 function getServiceById(serviceId) {
   return SERVICE_CATALOGUE.find((service) => service.serviceId === serviceId && service.active);
-}
-
-function getClientIp(req) {
-  const forwardedFor = String(req.get('x-forwarded-for') || '');
-  const firstForwardedIp = forwardedFor.split(',')[0].trim();
-
-  const rawIp =
-    firstForwardedIp ||
-    req.ip ||
-    req.socket?.remoteAddress ||
-    'client';
-
-  return String(rawIp).replace(/^::ffff:/, '');
-}
-
-function ipDenyGate(req, res, next) {
-  const ip = getClientIp(req);
-
-  if (BLOCKED_IPS.has(ip)) {
-    addLegacyCoins(req, 'blocked-ip', 250, 403);
-    return res.status(403).end();
-  }
-
-  return next();
 }
 
 function constantTimeEquals(a, b) {
@@ -485,6 +546,377 @@ function sanitizePublicPayload(payload = {}) {
       ? Object.keys(payload)
       : []
   };
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderPage({ title, body }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)} | True AI Penny Pod</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:#07111f;
+      --panel:#0d1f35;
+      --text:#e9f2ff;
+      --muted:#a9bed7;
+      --line:rgba(255,255,255,.14);
+      --accent:#79d5ff;
+      --good:#a8ffcf;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      min-height:100vh;
+      font-family:Arial,Helvetica,sans-serif;
+      background:radial-gradient(circle at top left,rgba(121,213,255,.18),transparent 34rem),linear-gradient(160deg,#050a12 0%,var(--bg) 64%,#03070d 100%);
+      color:var(--text);
+    }
+    header, main, footer {
+      width:min(1120px,calc(100% - 32px));
+      margin:0 auto;
+    }
+    header {
+      padding:26px 0 12px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:14px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    nav {
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+    a {
+      color:var(--accent);
+      text-decoration:none;
+    }
+    a:hover {
+      text-decoration:underline;
+    }
+    .brand {
+      display:grid;
+      gap:4px;
+      color:var(--text);
+    }
+    .brand strong {
+      font-size:1.08rem;
+      letter-spacing:.04em;
+    }
+    .brand span, .muted {
+      color:var(--muted);
+      font-size:.95rem;
+    }
+    .nav-link, .button {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:42px;
+      padding:10px 14px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:700;
+      text-decoration:none;
+      cursor:pointer;
+    }
+    .nav-link:hover, .button:hover {
+      background:rgba(255,255,255,.10);
+      text-decoration:none;
+    }
+    .button.primary {
+      background:linear-gradient(135deg,#2c9eff,#29d17f);
+      color:#001220;
+      border:0;
+    }
+    .button.secondary {
+      background:rgba(168,255,207,.12);
+      border-color:rgba(168,255,207,.25);
+    }
+    main {
+      padding:18px 0 40px;
+      display:grid;
+      gap:18px;
+    }
+    .hero, .panel, .card {
+      border:1px solid var(--line);
+      background:rgba(13,31,53,.86);
+      border-radius:22px;
+      box-shadow:0 20px 80px rgba(0,0,0,.28);
+    }
+    .hero {
+      padding:clamp(24px,4vw,48px);
+      display:grid;
+      gap:22px;
+    }
+    .panel, .card {
+      padding:20px;
+    }
+    h1,h2,h3,p {
+      margin-top:0;
+    }
+    h1 {
+      font-size:clamp(2.15rem,7vw,4.8rem);
+      line-height:.96;
+      margin-bottom:10px;
+    }
+    h2 {
+      font-size:clamp(1.35rem,3vw,2rem);
+      margin-bottom:10px;
+    }
+    p {
+      color:var(--muted);
+      line-height:1.6;
+    }
+    .grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+      gap:16px;
+    }
+    .pill-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .pill {
+      display:inline-flex;
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(121,213,255,.10);
+      border:1px solid rgba(121,213,255,.18);
+      color:var(--accent);
+      font-size:.86rem;
+      font-weight:700;
+    }
+    .price {
+      font-size:2rem;
+      font-weight:800;
+      color:var(--good);
+      margin:10px 0;
+    }
+    form {
+      display:grid;
+      gap:14px;
+    }
+    label {
+      display:grid;
+      gap:7px;
+      color:var(--text);
+      font-weight:700;
+    }
+    input, select, textarea {
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:rgba(0,0,0,.22);
+      color:var(--text);
+      padding:13px 14px;
+      font:inherit;
+    }
+    textarea {
+      min-height:150px;
+      resize:vertical;
+    }
+    code {
+      color:var(--good);
+    }
+    footer {
+      padding:28px 0 40px;
+      color:var(--muted);
+      font-size:.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">
+      <strong>True AI Penny Pod</strong>
+      <span>ASIOD public shell</span>
+    </a>
+    <nav>
+      <a class="nav-link" href="/intake">Intake</a>
+      <a class="nav-link" href="/adverts">Adverts</a>
+      <a class="nav-link" href="/api/health">API Health</a>
+      <a class="nav-link" href="/.well-known/agent-card.json">Agent Card</a>
+    </nav>
+  </header>
+  <main>${body}</main>
+  <footer>Public shell only. Protected order, pod, receipt, worker, and brain routes require configured keys/signatures.</footer>
+</body>
+</html>`;
+}
+
+function renderHomePage() {
+  return renderPage({
+    title: 'Public Shell Live',
+    body: `
+      <section class="hero">
+        <div class="pill-row">
+          <span class="pill">PUBLIC SHELL ACTIVE</span>
+          <span class="pill">INTAKE RESTORED</span>
+          <span class="pill">ADVERTS RESTORED</span>
+          <span class="pill">HYBRID BRIDGE READY</span>
+        </div>
+        <div>
+          <h1>True AI Penny Pod</h1>
+          <p>Public two-string front door with protected paid-order, catalogue, receipt, hybrid-worker, and AI-to-AI routes behind the shell key layer.</p>
+        </div>
+        <div class="pill-row">
+          <a class="button primary" href="/intake">Open intake</a>
+          <a class="button secondary" href="/adverts">View adverts</a>
+          <a class="button" href="/api/services">API services</a>
+        </div>
+      </section>
+      <section class="grid">
+        <article class="card">
+          <h2>Public intake</h2>
+          <p>Visible form restored at <code>/intake</code>, with channel pages for A2A, B2B, and crypto intake.</p>
+        </article>
+        <article class="card">
+          <h2>Advert cards</h2>
+          <p>Visible advert page restored at <code>/adverts</code>, plus <code>/ads</code> and <code>/advertise</code> redirects.</p>
+        </article>
+        <article class="card">
+          <h2>Worker bridge</h2>
+          <p>Protected worker routes remain available. If <code>hybridEngineBridge.js</code> is missing, fallback worker routes activate.</p>
+        </article>
+      </section>
+    `
+  });
+}
+
+function renderAdvertCards() {
+  const cards = [
+    {
+      title: 'AI-to-AI Intake',
+      price: '£3',
+      text: 'Low-cost AI-to-AI entry, receipt creation, and first contact.',
+      href: '/pay/a2a'
+    },
+    {
+      title: 'Weekly Access',
+      price: '£15 / week',
+      text: 'Weekly access using the configured Stripe weekly payment link.',
+      href: '/pay/weekly'
+    },
+    {
+      title: 'Monthly Access',
+      price: 'Monthly',
+      text: 'Monthly payment advert using the configured Stripe monthly payment link.',
+      href: '/pay/monthly'
+    },
+    {
+      title: 'Shattered File Triage',
+      price: '£81+',
+      text: 'Damaged file inspection and repair planning.',
+      href: '/intake?service=shattered-file-triage'
+    },
+    {
+      title: 'Document File Repair',
+      price: '£25+',
+      text: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
+      href: '/intake?service=document-file-repair'
+    },
+    {
+      title: 'Media File Repair',
+      price: '£45+',
+      text: 'Repair attempt for image, video, audio, archive, or heavier media files.',
+      href: '/intake?service=media-file-repair'
+    }
+  ];
+
+  return cards.map((card) => `
+    <article class="card">
+      <h2>${escapeHtml(card.title)}</h2>
+      <div class="price">${escapeHtml(card.price)}</div>
+      <p>${escapeHtml(card.text)}</p>
+      <a class="button primary" href="${escapeHtml(card.href)}">Open</a>
+    </article>
+  `).join('');
+}
+
+function renderAdvertsPage() {
+  return renderPage({
+    title: 'Adverts',
+    body: `
+      <section class="hero">
+        <div class="pill-row">
+          <span class="pill">ADVERTS LIVE</span>
+          <span class="pill">STRIPE LINKS</span>
+          <span class="pill">SERVICE CARDS</span>
+        </div>
+        <h1>Adverts</h1>
+        <p>Public advert cards and payment doors for the True AI Penny Pod service shell.</p>
+      </section>
+      <section class="grid">${renderAdvertCards()}</section>
+    `
+  });
+}
+
+function serviceOptions(selectedServiceId = '') {
+  return SERVICE_CATALOGUE.map((service) => {
+    const selected = service.serviceId === selectedServiceId ? ' selected' : '';
+    return `<option value="${escapeHtml(service.serviceId)}"${selected}>${escapeHtml(service.name)} — £${escapeHtml(service.unitPriceGbp)}</option>`;
+  }).join('');
+}
+
+function renderIntakePage({ channel = 'a2a', selectedServiceId = 'basic-a2a-intake' } = {}) {
+  const safeChannel = ['a2a', 'b2b', 'crypto'].includes(channel) ? channel : 'a2a';
+
+  return renderPage({
+    title: 'Intake',
+    body: `
+      <section class="hero">
+        <div class="pill-row">
+          <span class="pill">INTAKE LIVE</span>
+          <span class="pill">PUBLIC FORM</span>
+          <span class="pill">WORKER QUEUE CAPABLE</span>
+        </div>
+        <h1>Intake</h1>
+        <p>Submit a public intake request. This does not expose private source material. Protected API intakes remain behind shell keys.</p>
+        <div class="pill-row">
+          <a class="button" href="/intake/a2a">A2A</a>
+          <a class="button" href="/intake/b2b">B2B</a>
+          <a class="button" href="/intake/crypto">Crypto</a>
+        </div>
+      </section>
+      <section class="panel">
+        <form method="post" action="/intake/public">
+          <input type="hidden" name="channel" value="${escapeHtml(safeChannel)}">
+          <label>Service
+            <select name="serviceId">${serviceOptions(selectedServiceId)}</select>
+          </label>
+          <label>Name or agent ID
+            <input name="requester" maxlength="120" placeholder="Requester / agent / company">
+          </label>
+          <label>Email or return contact
+            <input name="contact" maxlength="160" placeholder="Contact or callback detail">
+          </label>
+          <label>Request details
+            <textarea name="message" maxlength="4000" placeholder="Write the intake request here"></textarea>
+          </label>
+          <label>Target worker
+            <input name="targetWorker" maxlength="120" value="windows-laptop-worker-01">
+          </label>
+          <button class="button primary" type="submit">Submit intake</button>
+        </form>
+      </section>
+    `
+  });
 }
 
 function buildQuote({ serviceId, quantity = 1, requester = null } = {}) {
@@ -538,10 +970,13 @@ function buildPublicApiAgentCard() {
   return {
     ok: true,
     service: 'ASIOD Public API Shell',
-    version: '1.0.2-sealed',
+    version: '1.0.3-hybrid-intake-adverts',
     api_base_url: APP_BASE_URL,
     shell: PUBLIC_API_SHELL,
     endpoints: {
+      home: '/',
+      intake: '/intake',
+      adverts: '/adverts',
       health: '/api/health',
       services: '/api/services',
       agent_card: '/api/agent-card',
@@ -558,6 +993,8 @@ function buildPublicApiAgentCard() {
     },
     security: {
       publicRoutesLimited: true,
+      publicIntakePageAvailable: true,
+      publicAdvertsPageAvailable: true,
       protectedRoutesRequireShellKey: true,
       signedBridgePacketsRequired: true,
       publicInboundToWorker: false,
@@ -575,7 +1012,7 @@ function buildPublicApiAgentCard() {
       ordersPublic: false,
       podRoutesPublic: false,
       brainRoutesPublic: false,
-      intakeRoutesPublic: false,
+      apiIntakeRoutesProtected: true,
       stripeSecretsPublic: false,
       databaseUrlPublic: false,
       apiKeyPublic: false,
@@ -583,12 +1020,12 @@ function buildPublicApiAgentCard() {
       privateSourceSerialPublic: false
     },
     rules: [
-      'Public discovery exposes only minimal shell status.',
+      'Public homepage, intake page, advert page, health, service discovery, and manifests are visible.',
       'Private source layer remains sealed and background-only.',
       'No public route returns private source material.',
       'No secret key, database URL, Stripe key, webhook secret, or internal credential is returned.',
-      'Receipts, orders, pod routes, brain routes, intakes, quotes, and payment creation require client-api-key or business-api-key.',
-      'Hybrid bridge routes require signed HMAC packets from the local worker device.',
+      'Receipts, orders, pod routes, brain routes, protected intakes, quotes, and payment creation require client-api-key or business-api-key.',
+      'Hybrid bridge routes require signed HMAC packets from the local worker device when the hybrid bridge module is installed.',
       'Stripe webhook is public only for Stripe delivery and is signature-verified.'
     ]
   };
@@ -628,104 +1065,6 @@ function securityHeaders(_req, res, next) {
   return next();
 }
 
-function quarantineGate(req, res, next) {
-  const path = String(req.path || '/').toLowerCase();
-  const userAgent = String(req.get('user-agent') || '').toLowerCase();
-  const contentType = String(req.get('content-type') || '').toLowerCase();
-
-  if (isAllowedPath(path)) {
-    return next();
-  }
-
-  if (req.method === 'HEAD') {
-    if (path === '/' || path === '/health' || path === '/api/health') {
-      return next();
-    }
-
-    addLegacyCoins(req, 'head-noise', 1, 403);
-    return res.status(403).end();
-  }
-
-  if (QUIET_PUBLIC_PATHS.has(path)) {
-    addLegacyCoins(req, 'quiet-public-noise', 2, 404);
-    return res.status(404).send('Not found');
-  }
-
-  for (const blockedPath of BLOCKED_ATTACK_PATHS) {
-    if (path === blockedPath || path.includes(blockedPath)) {
-      addLegacyCoins(req, 'blocked-attack-path', 10, 404);
-      return res.status(404).send('Not found');
-    }
-  }
-
-  for (const agent of BLOCKED_AGENTS) {
-    if (userAgent.includes(agent.toLowerCase())) {
-      addLegacyCoins(req, 'blocked-user-agent', 25, 404);
-      return res.status(404).send('Not found');
-    }
-  }
-
-  if (contentType.includes('multipart/form-data')) {
-    addLegacyCoins(req, 'multipart-upload-blocked', 50, 404);
-    return res.status(404).send('Not found');
-  }
-
-  return next();
-}
-
-function rateLimit(req, res, next) {
-  const now = Date.now();
-  const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
-    ? RATE_LIMIT_WINDOW_MS
-    : 60000;
-  const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
-    ? RATE_LIMIT_MAX
-    : 120;
-
-  const bucketKey = `${getClientIp(req)}:${req.path}`;
-  const existing = rateBuckets.get(bucketKey);
-  const bucket = existing && existing.resetAt > now
-    ? existing
-    : { count: 0, resetAt: now + windowMs };
-
-  bucket.count += 1;
-  rateBuckets.set(bucketKey, bucket);
-
-  res.setHeader('RateLimit-Limit', String(maxRequests));
-  res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - bucket.count)));
-  res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
-
-  if (bucket.count > maxRequests) {
-    addLegacyCoins(req, 'rate-limit-exceeded', 100, 429);
-    return res.status(429).json({
-      ok: false,
-      error: 'Too many requests'
-    });
-  }
-
-  return next();
-}
-
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of rateBuckets.entries()) {
-    if (bucket.resetAt <= now) {
-      rateBuckets.delete(key);
-    }
-  }
-}, 120000);
-
-if (typeof cleanupTimer.unref === 'function') {
-  cleanupTimer.unref();
-}
-
-const LOCKED_JSON_BODY_LIMIT = '32kb';
-
-const lockedJsonBody = express.json({
-  limit: LOCKED_JSON_BODY_LIMIT,
-  type: 'application/json'
-});
-
 function parseLockedJsonBody(req, res, onReady) {
   return lockedJsonBody(req, res, (error) => {
     if (error) {
@@ -745,6 +1084,20 @@ function parseLockedJsonBody(req, res, onReady) {
     }
 
     return onReady();
+  });
+}
+
+function parsePublicIntake(req, res, next) {
+  return PUBLIC_FORM_BODY(req, res, (error) => {
+    if (error) {
+      addLegacyCoins(req, 'public-form-invalid-body', 10, 400);
+      return res.status(400).send(renderPage({
+        title: 'Intake body rejected',
+        body: '<section class="panel"><h1>Intake body rejected.</h1><p>The form was too large or malformed.</p><a class="button" href="/intake">Back to intake</a></section>'
+      }));
+    }
+
+    return next();
   });
 }
 
@@ -786,6 +1139,156 @@ function protectedNoBody(handler) {
       });
     });
   };
+}
+
+function hostGate(req, res, next) {
+  const host = normaliseHost(req.get('host'));
+
+  if (isAllowedHost(host)) {
+    return next();
+  }
+
+  if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
+    console.warn(`[HOST_BLOCK] host=${host} method=${req.method} path=${req.originalUrl}`);
+    return res.status(410).send('Gone');
+  }
+
+  console.warn(`[HOST_BLOCK] host=${host || 'missing'} method=${req.method} path=${req.originalUrl}`);
+  return res.status(403).end();
+}
+
+function fastDropGate(req, res, next) {
+  const path = cleanRequestPath(req.path || '/');
+  const agent = String(req.get('user-agent') || '').toLowerCase();
+
+  const blockedPath = FAST_DROP_PATHS.some((blocked) =>
+    path === blocked ||
+    path.startsWith(`${blocked}/`) ||
+    path.includes(`${blocked}/`) ||
+    path.includes(blocked)
+  );
+
+  if (blockedPath) {
+    return silentDrop(res);
+  }
+
+  const allowedPath = isAllowedPath(path);
+
+  if (!allowedPath) {
+    return silentDrop(res);
+  }
+
+  const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
+
+  if (blockedAgent && !['/health', '/api/health', '/stripe/webhook'].includes(path)) {
+    return silentDrop(res);
+  }
+
+  return next();
+}
+
+function ipDenyGate(req, res, next) {
+  const ip = getClientIp(req);
+
+  const blocked =
+    BLOCKED_IPS.has(ip) ||
+    BLOCKED_IP_PREFIXES.some((prefix) => ip.startsWith(prefix));
+
+  if (blocked) {
+    addLegacyCoins(req, 'blocked-ip', 250, 403);
+    console.warn(`[IP_BLOCK] ip=${ip} method=${req.method} path=${req.originalUrl}`);
+    return res.status(403).end();
+  }
+
+  return next();
+}
+
+function quarantineGate(req, res, next) {
+  const path = cleanRequestPath(req.path || '/');
+  const userAgent = String(req.get('user-agent') || '').toLowerCase();
+  const contentType = String(req.get('content-type') || '').toLowerCase();
+
+  if (isAllowedPath(path)) {
+    return next();
+  }
+
+  if (req.method === 'HEAD') {
+    if (path === '/' || path === '/health' || path === '/api/health') {
+      return next();
+    }
+
+    addLegacyCoins(req, 'head-noise', 1, 403);
+    return res.status(403).end();
+  }
+
+  for (const blockedPath of FAST_DROP_PATHS) {
+    if (path === blockedPath || path.includes(blockedPath)) {
+      addLegacyCoins(req, 'blocked-attack-path', 10, 404);
+      return res.status(404).send('Not found');
+    }
+  }
+
+  for (const agent of FAST_DROP_AGENTS) {
+    if (userAgent.includes(agent.toLowerCase())) {
+      addLegacyCoins(req, 'blocked-user-agent', 25, 404);
+      return res.status(404).send('Not found');
+    }
+  }
+
+  if (contentType.includes('multipart/form-data')) {
+    addLegacyCoins(req, 'multipart-upload-blocked', 50, 404);
+    return res.status(404).send('Not found');
+  }
+
+  return next();
+}
+
+function rateLimit(req, res, next) {
+  const now = Date.now();
+  const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
+    ? RATE_LIMIT_WINDOW_MS
+    : 60000;
+
+  const maxRequests = Number.isFinite(RATE_LIMIT_MAX) && RATE_LIMIT_MAX > 0
+    ? RATE_LIMIT_MAX
+    : 120;
+
+  const bucketKey = `${getClientIp(req)}:${req.path}`;
+  const existing = rateBuckets.get(bucketKey);
+  const bucket = existing && existing.resetAt > now
+    ? existing
+    : { count: 0, resetAt: now + windowMs };
+
+  bucket.count += 1;
+  rateBuckets.set(bucketKey, bucket);
+
+  res.setHeader('RateLimit-Limit', String(maxRequests));
+  res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - bucket.count)));
+  res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+
+  if (bucket.count > maxRequests) {
+    addLegacyCoins(req, 'rate-limit-exceeded', 100, 429);
+    return res.status(429).json({
+      ok: false,
+      error: 'Too many requests'
+    });
+  }
+
+  return next();
+}
+
+const cleanupTimer = setInterval(() => {
+  const now = Date.now();
+
+  for (const [key, bucket] of rateBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      rateBuckets.delete(key);
+    }
+  }
+}, 120000);
+
+if (typeof cleanupTimer.unref === 'function') {
+  cleanupTimer.unref();
 }
 
 async function writeCatalogueRecord({
@@ -885,6 +1388,7 @@ async function readApiReceipt(receiptId) {
 
 async function createOrderFromQuote({ quote, agentId = null, customerEmail = null, reference = null, access = null } = {}) {
   const orderId = `order_${uuidv4()}`;
+
   const receipt = await createApiReceipt('order', {
     orderId,
     quoteId: quote.quoteId,
@@ -1047,6 +1551,7 @@ async function handleApiIntake(channel, req, res) {
     const incomingBody = req.body || {};
     const jobId = `job_${uuidv4()}`;
     const packetId = `packet_${uuidv4()}`;
+
     const targetWorker = String(
       incomingBody.targetWorker ||
       incomingBody.workerId ||
@@ -1121,7 +1626,7 @@ async function handleApiIntake(channel, req, res) {
         id: `cat_${jobId}`,
         agentId: channel,
         recordType: `api_${channel}_worker_job`,
-        title: `A2A worker job queued: ${jobId}`,
+        title: `Worker job queued: ${jobId}`,
         body: jobRecord,
         units: Number(incomingBody.units || 0)
       });
@@ -1219,6 +1724,221 @@ async function initDb() {
   console.log('Catalogue database ready.');
 }
 
+function installFallbackHybridEngineBridgeRoutes() {
+  app.post('/api/funnel/intake', protectedJson(async (req, res) => {
+    return handleApiIntake('funnel', req, res);
+  }));
+
+  app.post('/api/worker/heartbeat', protectedJson(async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'windows-laptop-worker-01');
+
+    await pool.query(
+      `insert into worker_nodes (id, device_id, status, last_seen_at, body)
+       values ($1, $2, 'active', now(), $3)
+       on conflict (device_id) do update
+       set status = 'active',
+           last_seen_at = now(),
+           body = excluded.body`,
+      [`node_${deviceId}`, deviceId, req.body || {}]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      deviceId,
+      status: 'active',
+      privateSourceExposed: false
+    });
+  }));
+
+  app.post('/api/worker/poll', protectedJson(async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'windows-laptop-worker-01');
+
+    const result = await pool.query(
+      `select id, target_worker, processing_mode, status, body, created_at
+       from worker_jobs
+       where status = 'queued'
+         and (target_worker = $1 or target_worker is null)
+       order by created_at asc
+       limit 10`,
+      [deviceId]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      deviceId,
+      count: result.rows.length,
+      jobs: result.rows,
+      privateSourceExposed: false
+    });
+  }));
+
+  app.post('/api/worker/claim', protectedJson(async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const jobId = String(req.body?.jobId || '');
+
+    if (!jobId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'jobId is required'
+      });
+    }
+
+    const result = await pool.query(
+      `update worker_jobs
+       set status = 'claimed',
+           updated_at = now()
+       where id = $1 and status = 'queued'
+       returning id, target_worker, processing_mode, status, body, created_at`,
+      [jobId]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      claimed: result.rows.length === 1,
+      job: result.rows[0] || null,
+      privateSourceExposed: false
+    });
+  }));
+
+  app.post('/api/worker/result', protectedJson(async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const jobId = String(req.body?.jobId || '');
+    const resultBody = req.body?.result || req.body || {};
+
+    if (!jobId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'jobId is required'
+      });
+    }
+
+    const result = await pool.query(
+      `update worker_jobs
+       set status = 'completed',
+           result = $2,
+           updated_at = now()
+       where id = $1
+       returning id, target_worker, processing_mode, status, body, result, created_at, updated_at`,
+      [jobId, resultBody]
+    );
+
+    if (result.rows[0]) {
+      await writeCatalogueRecord({
+        id: `cat_result_${jobId}`,
+        agentId: 'worker-result',
+        recordType: 'api_worker_result',
+        title: `Worker result: ${jobId}`,
+        body: result.rows[0],
+        units: Number(req.body?.units || 0)
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      stored: result.rows.length === 1,
+      job: result.rows[0] || null,
+      privateSourceExposed: false
+    });
+  }));
+
+  app.get('/pod/worker/nodes', protectedNoBody(async (_req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const result = await pool.query(
+      `select id, device_id, status, last_seen_at, body, created_at
+       from worker_nodes
+       order by last_seen_at desc nulls last, created_at desc
+       limit 50`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      count: result.rows.length,
+      nodes: result.rows,
+      privateSourceExposed: false
+    });
+  }));
+
+  app.get('/pod/worker/jobs/recent', protectedNoBody(async (_req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const result = await pool.query(
+      `select id, target_worker, processing_mode, status, body, result, created_at, updated_at
+       from worker_jobs
+       order by created_at desc
+       limit 50`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      count: result.rows.length,
+      jobs: result.rows,
+      privateSourceExposed: false
+    });
+  }));
+
+  app.get('/pod/bridge/packets/recent', protectedNoBody(async (_req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const result = await pool.query(
+      `select id, device_id, direction, packet_type, status, body, created_at
+       from bridge_packets
+       order by created_at desc
+       limit 50`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      count: result.rows.length,
+      packets: result.rows,
+      privateSourceExposed: false
+    });
+  }));
+}
+
+app.use(hostGate);
+app.use(fastDropGate);
 app.use(securityHeaders);
 app.use(ipDenyGate);
 app.use(quarantineGate);
@@ -1275,19 +1995,156 @@ app.get('/pay/monthly', (_req, res) => {
 });
 
 app.get('/', (_req, res) => {
-  return res.status(200).json({
-    ok: true,
-    service: 'True AI Penny Pod',
-    status: 'live'
-  });
+  return res.status(200).type('html').send(renderHomePage());
 });
+
+app.get('/intake', (req, res) => {
+  const selectedServiceId = String(req.query.service || 'basic-a2a-intake');
+  return res.status(200).type('html').send(renderIntakePage({ channel: 'a2a', selectedServiceId }));
+});
+
+app.get('/intake/a2a', (req, res) => {
+  const selectedServiceId = String(req.query.service || 'basic-a2a-intake');
+  return res.status(200).type('html').send(renderIntakePage({ channel: 'a2a', selectedServiceId }));
+});
+
+app.get('/intake/b2b', (req, res) => {
+  const selectedServiceId = String(req.query.service || 'basic-a2a-intake');
+  return res.status(200).type('html').send(renderIntakePage({ channel: 'b2b', selectedServiceId }));
+});
+
+app.get('/intake/crypto', (req, res) => {
+  const selectedServiceId = String(req.query.service || 'basic-a2a-intake');
+  return res.status(200).type('html').send(renderIntakePage({ channel: 'crypto', selectedServiceId }));
+});
+
+app.post('/intake/public', parsePublicIntake, async (req, res) => {
+  const channel = ['a2a', 'b2b', 'crypto'].includes(req.body?.channel) ? req.body.channel : 'a2a';
+  const serviceId = String(req.body?.serviceId || 'basic-a2a-intake');
+  const targetWorker = String(req.body?.targetWorker || 'windows-laptop-worker-01');
+
+  const publicPayload = {
+    serviceId,
+    requester: String(req.body?.requester || '').slice(0, 120),
+    contact: String(req.body?.contact || '').slice(0, 160),
+    message: String(req.body?.message || '').slice(0, 4000),
+    targetWorker,
+    source: 'public-intake-form'
+  };
+
+  try {
+    const receipt = await createApiReceipt(`public-${channel}`, {
+      ...publicPayload,
+      privateSourceExposed: false,
+      shellSerial: SHELL_REGISTRY.freeFrontDoor.shellSerial,
+      shellStatus: SHELL_REGISTRY.freeFrontDoor.status
+    });
+
+    if (pool) {
+      const jobId = `job_${uuidv4()}`;
+      const packetId = `packet_${uuidv4()}`;
+
+      const jobRecord = {
+        ...publicPayload,
+        jobId,
+        packetId,
+        channel,
+        targetWorker,
+        receiptId: receipt.receiptId,
+        route: 'public-form-to-local-worker',
+        privateSourceExposed: false,
+        receivedAt: new Date().toISOString()
+      };
+
+      await pool.query(
+        `insert into worker_jobs (id, target_worker, processing_mode, status, body)
+         values ($1, $2, 'local-worker', 'queued', $3)
+         on conflict (id) do update
+         set target_worker = excluded.target_worker,
+             processing_mode = excluded.processing_mode,
+             status = 'queued',
+             body = excluded.body`,
+        [jobId, targetWorker, jobRecord]
+      );
+
+      await pool.query(
+        `insert into bridge_packets (id, device_id, direction, packet_type, status, body)
+         values ($1, $2, 'in', $3, 'queued', $4)
+         on conflict (id) do update
+         set device_id = excluded.device_id,
+             direction = excluded.direction,
+             packet_type = excluded.packet_type,
+             status = 'queued',
+             body = excluded.body`,
+        [packetId, targetWorker, `public-${channel}`, jobRecord]
+      );
+    }
+
+    return res.status(202).type('html').send(renderPage({
+      title: 'Intake received',
+      body: `
+        <section class="panel">
+          <h1>Intake received.</h1>
+          <p>Your public intake was accepted by the shell.</p>
+          <p><strong>Receipt:</strong> ${escapeHtml(receipt.receiptId)}</p>
+          <p><strong>Database queue:</strong> ${pool ? 'stored' : 'not configured'}</p>
+          <div class="pill-row">
+            <a class="button primary" href="/adverts">View adverts</a>
+            <a class="button" href="/intake">New intake</a>
+          </div>
+        </section>
+      `
+    }));
+  } catch (error) {
+    console.error('Public intake failed:', error);
+
+    return res.status(500).type('html').send(renderPage({
+      title: 'Intake failed',
+      body: '<section class="panel"><h1>Intake failed.</h1><p>The public shell could not store the intake.</p><a class="button" href="/intake">Back to intake</a></section>'
+    }));
+  }
+});
+
+app.get('/adverts', (_req, res) => {
+  return res.status(200).type('html').send(renderAdvertsPage());
+});
+
+app.get('/ads', (_req, res) => {
+  return res.redirect(302, '/adverts');
+});
+
+app.get('/advertise', (_req, res) => {
+  return res.redirect(302, '/adverts');
+});
+
+app.get('/ads.txt', (_req, res) => {
+  return res.status(200).type('text/plain').send(ADS_TXT || '# ads.txt not configured\n');
+});
+
+app.get('/robots.txt', (_req, res) => {
+  return res.status(200).type('text/plain').send('User-agent: *\nDisallow:\n');
+});
+
+app.get('/sitemap.xml', (_req, res) => {
+  return res.status(200).type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${APP_BASE_URL}/</loc></url>
+  <url><loc>${APP_BASE_URL}/intake</loc></url>
+  <url><loc>${APP_BASE_URL}/adverts</loc></url>
+</urlset>
+`);
+});
+
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
+app.get('/favicon.png', (_req, res) => res.status(204).end());
 
 app.get('/health', (_req, res) => {
   return res.status(200).json({
     ok: true,
     service: 'True AI Penny Pod',
-    version: '1.0.2-sealed',
+    version: '1.0.3-hybrid-intake-adverts',
     status: 'live',
+    publicPages: ['/', '/intake', '/adverts'],
     privateSourceExposed: false,
     privateSourceSerialPublic: false,
     integerLock784: true,
@@ -1300,7 +2157,7 @@ app.get('/api/health', (_req, res) => {
   return res.status(200).json({
     ok: true,
     service: 'ASIOD Public API Shell',
-    version: '1.0.2-sealed',
+    version: '1.0.3-hybrid-intake-adverts',
     status: 'live',
     mode: 'two-string-public-front-door',
     shell: PUBLIC_API_SHELL,
@@ -1320,6 +2177,21 @@ app.get('/api/services', (_req, res) => {
     privateSourceExposed: false,
     cataloguePublic: false,
     paymentPublic: false,
+    publicPages: {
+      home: '/',
+      intake: '/intake',
+      adverts: '/adverts',
+      ads: '/ads',
+      advertise: '/advertise'
+    },
+    services: SERVICE_CATALOGUE.map((service) => ({
+      serviceId: service.serviceId,
+      name: service.name,
+      description: service.description,
+      unitPriceGbp: service.unitPriceGbp,
+      currency: service.currency,
+      active: service.active
+    })),
     hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
     brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
     message: 'Public service discovery is limited to the two-string free tier.'
@@ -1331,7 +2203,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
 
   return res.status(200).json({
     service: 'True AI Penny Pod',
-    version: '1.0.2-sealed',
+    version: '1.0.3-hybrid-intake-adverts',
     type: 'public_discovery_manifest',
     status: 'active',
     api_base_url: APP_BASE_URL,
@@ -1351,7 +2223,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     provider: {
       organization: 'Jt Browne / ASIOD784'
     },
-    version: '1.0.2-sealed',
+    version: '1.0.3-hybrid-intake-adverts',
     capabilities: {
       streaming: false,
       pushNotifications: false,
@@ -1359,7 +2231,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     },
     authentication: {
       schemes: ['apiKey', 'signed-hmac-packet'],
-      description: 'Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
+      description: 'Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets when the hybrid bridge module is installed.'
     },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
@@ -1507,17 +2379,9 @@ app.post('/api/brain/test', protectedJson(async (req, res, access) => {
   return res.status(200).json(result);
 }));
 
-app.post('/api/b2b/intake', protectedJson(async (req, res) => {
-  return handleApiIntake('b2b', req, res);
-}));
-
-app.post('/api/a2a/intake', protectedJson(async (req, res) => {
-  return handleApiIntake('a2a', req, res);
-}));
-
-app.post('/api/crypto/intake', protectedJson(async (req, res) => {
-  return handleApiIntake('crypto', req, res);
-}));
+app.post('/api/b2b/intake', protectedJson(async (req, res) => handleApiIntake('b2b', req, res)));
+app.post('/api/a2a/intake', protectedJson(async (req, res) => handleApiIntake('a2a', req, res)));
+app.post('/api/crypto/intake', protectedJson(async (req, res) => handleApiIntake('crypto', req, res)));
 
 app.get('/api/receipt/:id', protectedNoBody(async (req, res) => {
   const receipt = await readApiReceipt(req.params.id);
@@ -1841,16 +2705,20 @@ app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
   });
 }));
 
-installHybridEngineBridgeRoutes({
-  app,
-  pool,
-  protectedNoBody,
-  writeCatalogueRecord,
-  getClientIp,
-  constantTimeEquals,
-  addLegacyCoins,
-  shellRegistry: SHELL_REGISTRY
-});
+if (typeof installHybridEngineBridgeRoutes === 'function') {
+  installHybridEngineBridgeRoutes({
+    app,
+    pool,
+    protectedNoBody,
+    writeCatalogueRecord,
+    getClientIp,
+    constantTimeEquals,
+    addLegacyCoins,
+    shellRegistry: SHELL_REGISTRY
+  });
+} else {
+  installFallbackHybridEngineBridgeRoutes();
+}
 
 app.use((req, res) => {
   addLegacyCoins(req, 'final-not-found', 5, 404);
