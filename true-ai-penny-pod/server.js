@@ -81,6 +81,139 @@ app.use((req, res, next) => {
   return next();
 });
 
+const FAST_DROP_PATHS = [
+  '/.git',
+  '/.env',
+  '/git/config',
+  '/config',
+  '/wp',
+  '/wordpress',
+  '/xmlrpc.php',
+  '/php',
+  '/vendor',
+  '/admin',
+  '/login',
+  '/cgi-bin',
+  '/server-status',
+  '/.well-known/security.txt',
+  '/.well-known/assetlinks.json',
+  '/.well-known/apple-app-site-association',
+  '/actuator',
+  '/boaform',
+  '/hudson',
+  '/jenkins',
+  '/solr',
+  '/phpmyadmin',
+  '/pma',
+  '/mysql',
+  '/shell',
+  '/console',
+  '/debug',
+  '/setup',
+  '/install',
+  '/backup',
+  '/dump',
+  '/db',
+  '/database',
+  '/aws',
+  '/credentials',
+  '/id_rsa'
+];
+
+const FAST_DROP_AGENTS = [
+  'zgrab',
+  'masscan',
+  'nikto',
+  'sqlmap',
+  'python-requests',
+  'curl',
+  'wget',
+  'go-http-client',
+  'weft-search-ingest',
+  'weft-search-triage',
+  'weft-search-fetcher',
+  'weftlabs'
+];
+
+const ALLOWED_EXACT_PATHS = new Set([
+  '/',
+  '/health',
+  '/api/health',
+  '/api/agent-card',
+  '/api/services',
+  '/.well-known/true-ai.json',
+  '/.well-known/agent-card.json',
+  '/stripe/webhook',
+  '/pay/a2a',
+  '/pay/weekly',
+  '/pay/monthly',
+  '/api/quote',
+  '/api/order/create',
+  '/api/brain/test',
+  '/api/b2b/intake',
+  '/api/a2a/intake',
+  '/api/crypto/intake',
+  '/pod/b2b/client/create',
+  '/pod/work/start',
+  '/pod/work/complete',
+  '/pod/setup-customer',
+  '/pod/catalogue/write',
+  '/pod/catalogue/recent',
+  '/pod/shattered-file/receive',
+  '/pod/worker/nodes',
+  '/pod/worker/jobs/recent',
+  '/pod/bridge/packets/recent',
+  '/api/funnel/intake',
+  '/api/worker/heartbeat',
+  '/api/worker/poll',
+  '/api/worker/claim',
+  '/api/worker/result'
+]);
+
+const ALLOWED_DYNAMIC_PREFIXES = [
+  '/api/order/',
+  '/api/receipt/'
+];
+
+function silentDrop(res) {
+  return res.status(204).end();
+}
+
+app.use((req, res, next) => {
+  const path = String(req.path || '/').toLowerCase();
+  const agent = String(req.get('user-agent') || '').toLowerCase();
+
+  const blockedPath = FAST_DROP_PATHS.some((blocked) =>
+    path === blocked ||
+    path.startsWith(`${blocked}/`) ||
+    path.includes(`${blocked}/`) ||
+    path.includes(blocked)
+  );
+
+  if (blockedPath) {
+    return silentDrop(res);
+  }
+
+  const blockedAgent = FAST_DROP_AGENTS.some((blocked) =>
+    agent.includes(blocked)
+  );
+
+  if (blockedAgent) {
+    return silentDrop(res);
+  }
+
+  const exactAllowed = ALLOWED_EXACT_PATHS.has(path);
+  const dynamicAllowed = ALLOWED_DYNAMIC_PREFIXES.some((prefix) =>
+    path.startsWith(prefix)
+  );
+
+  if (!exactAllowed && !dynamicAllowed) {
+    return silentDrop(res);
+  }
+
+  return next();
+});
+
 const PORT = process.env.PORT || 4242;
 
 const APP_BASE_URL =
