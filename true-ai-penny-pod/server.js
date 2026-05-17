@@ -1143,19 +1143,28 @@ function protectedNoBody(handler) {
 
 function hostGate(req, res, next) {
   const host = normaliseHost(req.get('host'));
+  const path = cleanRequestPath(req.path || '/');
 
   if (isAllowedHost(host)) {
     return next();
   }
 
   if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
+    if (
+      path === '/.well-known/agent-card.json' ||
+      path === '/.well-known/true-ai.json' ||
+      path === '/api/health'
+    ) {
+      return next();
+    }
+
     console.warn(`[HOST_BLOCK] host=${host} method=${req.method} path=${req.originalUrl}`);
     return res.status(410).send('Gone');
   }
 
   console.warn(`[HOST_BLOCK] host=${host || 'missing'} method=${req.method} path=${req.originalUrl}`);
   return res.status(403).end();
-}
+        }
 
 function fastDropGate(req, res, next) {
   const path = cleanRequestPath(req.path || '/');
