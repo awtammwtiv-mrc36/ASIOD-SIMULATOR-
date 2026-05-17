@@ -32,55 +32,6 @@ app.use((req, res, next) => {
   return res.status(403).end();
 });
 
-const HARD_BLOCK_PATHS = [
-  '/.git',
-  '/.env',
-  '/git/config',
-  '/config',
-  '/wp',
-  '/wordpress',
-  '/xmlrpc.php',
-  '/php',
-  '/vendor',
-  '/admin',
-  '/login',
-  '/cgi-bin',
-  '/server-status',
-  '/.well-known/security.txt'
-];
-
-const HARD_BLOCK_AGENTS = [
-  'zgrab',
-  'masscan',
-  'nikto',
-  'sqlmap',
-  'python-requests',
-  'curl',
-  'wget',
-  'go-http-client',
-  'weft-search-ingest',
-  'weftlabs'
-];
-
-app.use((req, res, next) => {
-  const path = String(req.path || '').toLowerCase();
-  const agent = String(req.get('user-agent') || '').toLowerCase();
-
-  const badPath = HARD_BLOCK_PATHS.some((blocked) =>
-    path === blocked || path.startsWith(`${blocked}/`) || path.includes(blocked)
-  );
-
-  const badAgent = HARD_BLOCK_AGENTS.some((blocked) =>
-    agent.includes(blocked.toLowerCase())
-  );
-
-  if (badPath || badAgent) {
-    return res.status(403).end();
-  }
-
-  return next();
-});
-
 const FAST_DROP_PATHS = [
   '/.git',
   '/.env',
@@ -175,6 +126,15 @@ const ALLOWED_DYNAMIC_PREFIXES = [
   '/api/receipt/'
 ];
 
+function isAllowedPath(path) {
+  const cleanPath = String(path || '/').toLowerCase();
+
+  return (
+    ALLOWED_EXACT_PATHS.has(cleanPath) ||
+    ALLOWED_DYNAMIC_PREFIXES.some((prefix) => cleanPath.startsWith(prefix))
+  );
+}
+
 function silentDrop(res) {
   return res.status(204).end();
 }
@@ -194,20 +154,17 @@ app.use((req, res, next) => {
     return silentDrop(res);
   }
 
+  const allowedPath = isAllowedPath(path);
+
+  if (!allowedPath) {
+    return silentDrop(res);
+  }
+
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) =>
     agent.includes(blocked)
   );
 
-  if (blockedAgent) {
-    return silentDrop(res);
-  }
-
-  const exactAllowed = ALLOWED_EXACT_PATHS.has(path);
-  const dynamicAllowed = ALLOWED_DYNAMIC_PREFIXES.some((prefix) =>
-    path.startsWith(prefix)
-  );
-
-  if (!exactAllowed && !dynamicAllowed) {
+  if (blockedAgent && !allowedPath) {
     return silentDrop(res);
   }
 
@@ -590,6 +547,9 @@ function buildPublicApiAgentCard() {
       agent_card: '/api/agent-card',
       true_ai_manifest: '/.well-known/true-ai.json',
       agent_manifest: '/.well-known/agent-card.json',
+      a2a_intake: '/api/a2a/intake',
+      b2b_intake: '/api/b2b/intake',
+      crypto_intake: '/api/crypto/intake',
       funnel_intake: '/api/funnel/intake',
       worker_heartbeat: '/api/worker/heartbeat',
       worker_poll: '/api/worker/poll',
@@ -669,9 +629,13 @@ function securityHeaders(_req, res, next) {
 }
 
 function quarantineGate(req, res, next) {
-  const path = req.path;
+  const path = String(req.path || '/').toLowerCase();
   const userAgent = String(req.get('user-agent') || '').toLowerCase();
   const contentType = String(req.get('content-type') || '').toLowerCase();
+
+  if (isAllowedPath(path)) {
+    return next();
+  }
 
   if (req.method === 'HEAD') {
     if (path === '/' || path === '/health' || path === '/api/health') {
@@ -1076,7 +1040,7 @@ async function createStripeCheckoutForOrder(order) {
   });
 
   return order.payment;
-    }
+}
 
 async function handleApiIntake(channel, req, res) {
   try {
@@ -1190,7 +1154,7 @@ async function handleApiIntake(channel, req, res) {
     });
   }
 }
-  
+
 async function initDb() {
   if (!pool) {
     console.log('DATABASE_URL not set. Catalogue database disabled.');
@@ -1400,7 +1364,8 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     shell: PUBLIC_API_SHELL,
-    security: buildPublicApiAgentCard().security
+    security: buildPublicApiAgentCard().security,
+    endpoints: buildPublicApiAgentCard().endpoints
   });
 });
 
