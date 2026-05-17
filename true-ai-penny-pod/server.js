@@ -1166,6 +1166,39 @@ function hostGate(req, res, next) {
   return res.status(403).end();
 }
 
+function corsGate(req, res, next) {
+  const path = cleanRequestPath(req.path || '/');
+
+  if (!isAllowedPath(path)) {
+    return next();
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    [
+      'Content-Type',
+      'Authorization',
+      'client-api-key',
+      'business-api-key',
+      'x-asiod-agent',
+      'x-asiod-device',
+      'x-asiod-channel',
+      'x-asiod-timestamp',
+      'x-asiod-signature'
+    ].join(', ')
+  );
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  return next();
+}
+
 function fastDropGate(req, res, next) {
   const path = cleanRequestPath(req.path || '/');
   const agent = String(req.get('user-agent') || '').toLowerCase();
@@ -1957,6 +1990,7 @@ function installFallbackHybridEngineBridgeRoutes() {
 }
 
 app.use(hostGate);
+app.use(corsGate);
 app.use(fastDropGate);
 app.use(securityHeaders);
 app.use(ipDenyGate);
