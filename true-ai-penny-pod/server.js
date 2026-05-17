@@ -943,27 +943,6 @@ async function createStripeCheckoutForOrder(order) {
   });
 
   return order.payment;
-}
-
-async function handleApiIntake(channel, req, res) {
-  try {
-    const receipt = await createApiReceipt(channel, {
-      ...(req.body || {}),
-      shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      shellStatus: SHELL_REGISTRY.externalPublicLayer.status
-    });
-
-    return res.status(200).json(receipt);
-  } catch (error) {
-    console.error(`API intake failed for ${channel}:`, error);
-
-    return res.status(500).json({
-      ok: false,
-      channel,
-      error: 'ASIOD-SHELL-001-FREE-2STR'
-    });
-  }
-}
 
 async function initDb() {
   if (!pool) {
