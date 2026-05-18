@@ -1598,7 +1598,7 @@ async function createStripeCheckoutForOrder(order) {
   return order.payment;
 }
 
-function handleApiIntake(channel, req, res) {
+async function handleApiIntake(channel, req, res) {
   try {
     const incomingBody = req.body || {};
     const jobId = `job_${uuidv4()}`;
@@ -1712,7 +1712,7 @@ function handleApiIntake(channel, req, res) {
   }
 }
 
-function initDb() {
+async function initDb() {
   if (!pool) {
     console.log('DATABASE_URL not set. Catalogue database disabled.');
     return;
