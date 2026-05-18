@@ -211,7 +211,6 @@ const FAST_DROP_AGENTS = Object.freeze([
 ]);
 
 const ALLOWED_EXACT_PATHS = new Set([
-  '/',
   '/health',
 
   '/intake',
@@ -1148,11 +1147,12 @@ function hostGate(req, res, next) {
   if (isAllowedHost(host)) {
     return next();
   }
-
-  if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
+  
+if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
     if (
       path === '/.well-known/agent-card.json' ||
       path === '/.well-known/true-ai.json' ||
+      path === '/health' ||
       path === '/api/health'
     ) {
       return next();
@@ -1160,8 +1160,7 @@ function hostGate(req, res, next) {
 
     console.warn(`[HOST_BLOCK] host=${host} method=${req.method} path=${req.originalUrl}`);
     return res.status(410).send('Gone');
-  }
-
+}
   console.warn(`[HOST_BLOCK] host=${host || 'missing'} method=${req.method} path=${req.originalUrl}`);
   return res.status(403).end();
 }
