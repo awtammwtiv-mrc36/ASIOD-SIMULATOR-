@@ -131,6 +131,12 @@ const localQuotes = new Map();
 const localOrders = new Map();
 const rateBuckets = new Map();
 
+/**
+ * One-handshake worker wait channel (server push via SSE).
+ * Worker connects once and stays connected. When jobs are queued, server pushes a "job" event.
+ */
+const workerStreams = new Map(); // deviceId -> res
+
 const legacyCoinLedger = [];
 const legacyCoinTotals = new Map();
 
@@ -211,6 +217,7 @@ const FAST_DROP_AGENTS = Object.freeze([
 ]);
 
 const ALLOWED_EXACT_PATHS = new Set([
+  '/',
   '/health',
 
   '/intake',
@@ -263,7 +270,10 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/api/worker/heartbeat',
   '/api/worker/poll',
   '/api/worker/claim',
-  '/api/worker/result'
+  '/api/worker/result',
+
+  // One-handshake wait channel:
+  '/api/worker/stream'
 ]);
 
 const ALLOWED_DYNAMIC_PREFIXES = [
@@ -599,26 +609,11 @@ function renderPage({ title, body }) {
       flex-wrap:wrap;
       gap:10px;
     }
-    a {
-      color:var(--accent);
-      text-decoration:none;
-    }
-    a:hover {
-      text-decoration:underline;
-    }
-    .brand {
-      display:grid;
-      gap:4px;
-      color:var(--text);
-    }
-    .brand strong {
-      font-size:1.08rem;
-      letter-spacing:.04em;
-    }
-    .brand span, .muted {
-      color:var(--muted);
-      font-size:.95rem;
-    }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .brand { display:grid; gap:4px; color:var(--text); }
+    .brand strong { font-size:1.08rem; letter-spacing:.04em; }
+    .brand span, .muted { color:var(--muted); font-size:.95rem; }
     .nav-link, .button {
       display:inline-flex;
       align-items:center;
@@ -646,51 +641,29 @@ function renderPage({ title, body }) {
       background:rgba(168,255,207,.12);
       border-color:rgba(168,255,207,.25);
     }
-    main {
-      padding:18px 0 40px;
-      display:grid;
-      gap:18px;
-    }
+    main { padding:18px 0 40px; display:grid; gap:18px; }
     .hero, .panel, .card {
       border:1px solid var(--line);
       background:rgba(13,31,53,.86);
       border-radius:22px;
       box-shadow:0 20px 80px rgba(0,0,0,.28);
     }
-    .hero {
-      padding:clamp(24px,4vw,48px);
-      display:grid;
-      gap:22px;
-    }
-    .panel, .card {
-      padding:20px;
-    }
-    h1,h2,h3,p {
-      margin-top:0;
-    }
+    .hero { padding:clamp(24px,4vw,48px); display:grid; gap:22px; }
+    .panel, .card { padding:20px; }
+    h1,h2,h3,p { margin-top:0; }
     h1 {
       font-size:clamp(2.15rem,7vw,4.8rem);
       line-height:.96;
       margin-bottom:10px;
     }
-    h2 {
-      font-size:clamp(1.35rem,3vw,2rem);
-      margin-bottom:10px;
-    }
-    p {
-      color:var(--muted);
-      line-height:1.6;
-    }
+    h2 { font-size:clamp(1.35rem,3vw,2rem); margin-bottom:10px; }
+    p { color:var(--muted); line-height:1.6; }
     .grid {
       display:grid;
       grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
       gap:16px;
     }
-    .pill-row {
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-    }
+    .pill-row { display:flex; flex-wrap:wrap; gap:8px; }
     .pill {
       display:inline-flex;
       padding:7px 10px;
@@ -707,16 +680,8 @@ function renderPage({ title, body }) {
       color:var(--good);
       margin:10px 0;
     }
-    form {
-      display:grid;
-      gap:14px;
-    }
-    label {
-      display:grid;
-      gap:7px;
-      color:var(--text);
-      font-weight:700;
-    }
+    form { display:grid; gap:14px; }
+    label { display:grid; gap:7px; color:var(--text); font-weight:700; }
     input, select, textarea {
       width:100%;
       border:1px solid var(--line);
@@ -726,18 +691,9 @@ function renderPage({ title, body }) {
       padding:13px 14px;
       font:inherit;
     }
-    textarea {
-      min-height:150px;
-      resize:vertical;
-    }
-    code {
-      color:var(--good);
-    }
-    footer {
-      padding:28px 0 40px;
-      color:var(--muted);
-      font-size:.9rem;
-    }
+    textarea { min-height:150px; resize:vertical; }
+    code { color:var(--good); }
+    footer { padding:28px 0 40px; color:var(--muted); font-size:.9rem; }
   </style>
 </head>
 <body>
@@ -791,7 +747,7 @@ function renderHomePage() {
         </article>
         <article class="card">
           <h2>Worker bridge</h2>
-          <p>Protected worker routes remain available. If <code>hybridEngineBridge.js</code> is missing, fallback worker routes activate.</p>
+          <p>Protected worker routes remain available. One-handshake stream available at <code>/api/worker/stream</code>.</p>
         </article>
       </section>
     `
@@ -800,42 +756,12 @@ function renderHomePage() {
 
 function renderAdvertCards() {
   const cards = [
-    {
-      title: 'AI-to-AI Intake',
-      price: '£3',
-      text: 'Low-cost AI-to-AI entry, receipt creation, and first contact.',
-      href: '/pay/a2a'
-    },
-    {
-      title: 'Weekly Access',
-      price: '£15 / week',
-      text: 'Weekly access using the configured Stripe weekly payment link.',
-      href: '/pay/weekly'
-    },
-    {
-      title: 'Monthly Access',
-      price: 'Monthly',
-      text: 'Monthly payment advert using the configured Stripe monthly payment link.',
-      href: '/pay/monthly'
-    },
-    {
-      title: 'Shattered File Triage',
-      price: '£81+',
-      text: 'Damaged file inspection and repair planning.',
-      href: '/intake?service=shattered-file-triage'
-    },
-    {
-      title: 'Document File Repair',
-      price: '£25+',
-      text: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
-      href: '/intake?service=document-file-repair'
-    },
-    {
-      title: 'Media File Repair',
-      price: '£45+',
-      text: 'Repair attempt for image, video, audio, archive, or heavier media files.',
-      href: '/intake?service=media-file-repair'
-    }
+    { title: 'AI-to-AI Intake', price: '£3', text: 'Low-cost AI-to-AI entry, receipt creation, and first contact.', href: '/pay/a2a' },
+    { title: 'Weekly Access', price: '£15 / week', text: 'Weekly access using the configured Stripe weekly payment link.', href: '/pay/weekly' },
+    { title: 'Monthly Access', price: 'Monthly', text: 'Monthly payment advert using the configured Stripe monthly payment link.', href: '/pay/monthly' },
+    { title: 'Shattered File Triage', price: '£81+', text: 'Damaged file inspection and repair planning.', href: '/intake?service=shattered-file-triage' },
+    { title: 'Document File Repair', price: '£25+', text: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.', href: '/intake?service=document-file-repair' },
+    { title: 'Media File Repair', price: '£45+', text: 'Repair attempt for image, video, audio, archive, or heavier media files.', href: '/intake?service=media-file-repair' }
   ];
 
   return cards.map((card) => `
@@ -985,6 +911,7 @@ function buildPublicApiAgentCard() {
       b2b_intake: '/api/b2b/intake',
       crypto_intake: '/api/crypto/intake',
       funnel_intake: '/api/funnel/intake',
+      worker_stream: '/api/worker/stream',
       worker_heartbeat: '/api/worker/heartbeat',
       worker_poll: '/api/worker/poll',
       worker_claim: '/api/worker/claim',
@@ -1147,8 +1074,8 @@ function hostGate(req, res, next) {
   if (isAllowedHost(host)) {
     return next();
   }
-  
-if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
+
+  if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
     if (
       path === '/.well-known/agent-card.json' ||
       path === '/.well-known/true-ai.json' ||
@@ -1160,11 +1087,16 @@ if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
 
     console.warn(`[HOST_BLOCK] host=${host} method=${req.method} path=${req.originalUrl}`);
     return res.status(410).send('Gone');
-}
+  }
+
   console.warn(`[HOST_BLOCK] host=${host || 'missing'} method=${req.method} path=${req.originalUrl}`);
   return res.status(403).end();
 }
 
+/**
+ * NOTE: Keeping your corsGate exactly as you supplied it.
+ * If you later want "privacy closed", you can remove this and stop browser-origin fetch traffic.
+ */
 function corsGate(req, res, next) {
   const path = cleanRequestPath(req.path || '/');
 
@@ -1221,19 +1153,19 @@ function fastDropGate(req, res, next) {
 
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
 
-const blockedAgentAllowedPaths = new Set([
-  '/health',
-  '/api/health',
-  '/api/agent-card',
-  '/api/services',
-  '/.well-known/agent-card.json',
-  '/.well-known/true-ai.json',
-  '/stripe/webhook'
-]);
+  const blockedAgentAllowedPaths = new Set([
+    '/health',
+    '/api/health',
+    '/api/agent-card',
+    '/api/services',
+    '/.well-known/agent-card.json',
+    '/.well-known/true-ai.json',
+    '/stripe/webhook'
+  ]);
 
-if (blockedAgent && !blockedAgentAllowedPaths.has(path)) {
-  return silentDrop(res);
-}
+  if (blockedAgent && !blockedAgentAllowedPaths.has(path)) {
+    return silentDrop(res);
+  }
 
   return next();
 }
@@ -1340,6 +1272,24 @@ const cleanupTimer = setInterval(() => {
 
 if (typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
+}
+
+/** SSE helpers */
+function sseWrite(res, event, dataObj) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(dataObj)}\n\n`);
+}
+
+function pushJobToWorker(targetWorker, jobEnvelope) {
+  const stream = workerStreams.get(String(targetWorker || ''));
+  if (!stream) return false;
+  try {
+    sseWrite(stream, 'job', jobEnvelope);
+    return true;
+  } catch {
+    workerStreams.delete(String(targetWorker || ''));
+    return false;
+  }
 }
 
 async function writeCatalogueRecord({
@@ -1681,6 +1631,15 @@ async function handleApiIntake(channel, req, res) {
         body: jobRecord,
         units: Number(incomingBody.units || 0)
       });
+
+      // One-handshake push: if worker is connected via /api/worker/stream, notify immediately.
+      pushJobToWorker(targetWorker, {
+        jobId,
+        packetId,
+        channel,
+        targetWorker,
+        receiptId: receipt.receiptId
+      });
     }
 
     return res.status(202).json({
@@ -1694,6 +1653,7 @@ async function handleApiIntake(channel, req, res) {
       workerQueueStored: Boolean(pool),
       source: `${channel}-webcard`,
       next: {
+        workerStream: '/api/worker/stream',
         workerPoll: '/api/worker/poll',
         workerResult: '/api/worker/result'
       },
@@ -1780,6 +1740,33 @@ function installFallbackHybridEngineBridgeRoutes() {
     return handleApiIntake('funnel', req, res);
   }));
 
+  // One-handshake worker stream (SSE). Worker connects once and waits.
+  app.get('/api/worker/stream', protectedNoBody(async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        ok: false,
+        error: 'DATABASE_URL is not attached'
+      });
+    }
+
+    const deviceId = String(req.query?.deviceId || 'windows-laptop-worker-01');
+
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    sseWrite(res, 'hello', { ok: true, deviceId, status: 'connected' });
+
+    workerStreams.set(deviceId, res);
+
+    req.on('close', () => {
+      const current = workerStreams.get(deviceId);
+      if (current === res) workerStreams.delete(deviceId);
+    });
+  }));
+
   app.post('/api/worker/heartbeat', protectedJson(async (req, res) => {
     if (!pool) {
       return res.status(503).json({
@@ -1827,6 +1814,12 @@ function installFallbackHybridEngineBridgeRoutes() {
        limit 10`,
       [deviceId]
     );
+
+    // LOW-DATA correction: if no jobs, return 204 and advise backoff.
+    if (!result.rows.length) {
+      res.setHeader('Retry-After', '300');
+      return res.status(204).end();
+    }
 
     return res.status(200).json({
       ok: true,
@@ -2130,6 +2123,15 @@ app.post('/intake/public', parsePublicIntake, async (req, res) => {
              body = excluded.body`,
         [packetId, targetWorker, `public-${channel}`, jobRecord]
       );
+
+      // One-handshake push for public intake as well:
+      pushJobToWorker(targetWorker, {
+        jobId,
+        packetId,
+        channel: `public-${channel}`,
+        targetWorker,
+        receiptId: receipt.receiptId
+      });
     }
 
     return res.status(202).type('html').send(renderPage({
