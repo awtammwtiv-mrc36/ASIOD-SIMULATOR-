@@ -85,15 +85,424 @@ try {
 const app = express();
 
 app.set('trust proxy', 1);
-app.get('/api/bridge/health', (_req, res) => {
-  return res.status(200).json({
-    ok: true,
+const directBridgeRawJson = express.raw({
+  type: 'application/json',
+  limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
+});
+
+function directBridgeUtf8() {
+  return new TextEncoder();
+}
+
+function directBridgeSecret() {
+  return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
+}
+
+function directBridgeTimingSafeEqual(a, b) {
+  const left = Buffer.from(String(a || ''), 'utf8');
+  const right = Buffer.from(String(b || ''), 'utf8');
+
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function directBridgeHmacHex(secret, payloadBuffer) {
+  return crypto.createHmac('sha256', secret).update(payloadBuffer).digest('hex');
+}
+
+function directBridgeHmacBase64(secret, payloadBuffer) {
+  return crypto.createHmac('sha256', secret).update(payloadBuffer).digest('base64');
+}
+
+function directBridgeVerify(req, rawBody) {
+  const secret = directBridgeSecret();
+  const timestamp = String(req.get('x-asiod-timestamp') || '');
+  const supplied = String(req.get('x-asiod-signature') || '').trim();
+
+  if (!secret) {
+    return {
+      ok: false,
+      status: 503,
+      error: 'funnel-not-configured',
+      serverSecretLength: 0
+    };
+  }
+
+  if (!timestamp || !supplied) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'signature-required',
+      serverSecretLength: secret.length
+    };
+  }
+
+  const timestampNumber = Number(timestamp);
+  const ageMs = Math.abs(Date.now() - timestampNumber);
+  const maxAgeMs = Number.parseInt(process.env.FUNNEL_MAX_AGE_MS || '300000', 10);
+
+  if (!Number.isFinite(timestampNumber) || !Number.isFinite(ageMs) || ageMs > maxAgeMs) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'stale-timestamp',
+      serverSecretLength: secret.length,
+      timestampAgeMs: Number.isFinite(ageMs) ? ageMs : null
+    };
+  }
+
+  const signedPayload = Buffer.concat([
+    Buffer.from(`${timestamp}.`, 'utf8'),
+    rawBody
+  ]);
+
+  const expectedHex = directBridgeHmacHex(secret, signedPayload);
+  const expectedHexPrefixed = `sha256=${expectedHex}`;
+  const expectedBase64 = directBridgeHmacBase64(secret, signedPayload);
+
+  if (
+    directBridgeTimingSafeEqual(supplied, expectedHex) ||
+    directBridgeTimingSafeEqual(supplied, expectedHexPrefixed) ||
+    directBridgeTimingSafeEqual(supplied, expectedBase64)
+  ) {
+    return {
+      ok: true,
+      timestamp,
+      signatureMode:
+        supplied === expectedBase64
+          ? 'base64'
+          : supplied.startsWith('sha256=')
+            ? 'sha256-prefixed-hex'
+            : 'hex'
+    };
+  }
+
+  return {
+    ok: false,
+    status: 401,
+    error: 'bad-signature',
+    serverSecretLength: secret.length,
+    suppliedSignatureLength: supplied.length,
+    rawBodyBytes: rawBody.length,
+    expectedFormatsAccepted: [
+      'hex timestamp.rawBody',
+      'sha256=hex timestamp.rawBody',
+      'base64 timestamp.rawBody'
+    ]
+  };
+}
+
+function directBridgeParseBody(rawBody) {
+  try {
+    const parsed = JSON.parse(rawBody.toString('utf8') || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function directBridgeWorkerId(req, body) {
+  return String(
+    body.workerId ||
+    body.deviceId ||
+    req.get('x-asiod-device') ||
+    'laptop-worker-03'
+  );
+}
+
+function directBridgeDeviceId(req, body) {
+  return String(
+    body.deviceId ||
+    body.workerId ||
+    req.get('x-asiod-device') ||
+    'local-device-03'
+  );
+}
+
+async function directBridgeEnsureTables() {
+  if (!pool) return false;
+
+  await pool.query(`
+    create table if not exists worker_nodes (
+      id text primary key,
+      label text,
+      status text not null default 'offline',
+      capabilities jsonb not null default '{}'::jsonb,
+      last_seen timestamptz not null default now(),
+      created_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists worker_jobs (
+      id text primary key,
+      target_worker text,
+      processing_mode text not null default 'local-worker',
+      status text not null default 'queued',
+      lease_until timestamptz,
+      body jsonb not null default '{}'::jsonb,
+      result jsonb,
+      created_at timestamptz not null default now(),
+      claimed_at timestamptz,
+      completed_at timestamptz
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists inbound_funnel_jobs (
+      id text primary key,
+      agent_id text,
+      source_ip text,
+      source_shell text,
+      bridge_serial text,
+      status text not null default 'queued',
+      headers jsonb not null default '{}'::jsonb,
+      body jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      processed_at timestamptz
+    );
+  `);
+
+  return true;
+}
+
+app.get('/api/bridge/health', async (_req, res) => {
+  let database = 'not-configured';
+
+  if (pool) {
+    try {
+      await pool.query('select 1');
+      database = 'online';
+    } catch {
+      database = 'error';
+    }
+  }
+
+  return res.status(database === 'error' ? 503 : 200).json({
+    ok: database !== 'error',
     bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
-    mode: 'quiet-long-poll-worker-node',
+    mode: 'direct-override-quiet-bridge',
+    routeInstalledDirectlyInServer: true,
     serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET),
-    funnelSecretLength: String(process.env.FUNNEL_WEBHOOK_SECRET || '').length,
+    funnelSecretLength: directBridgeSecret().length,
+    database,
     expectedWorkerId: 'laptop-worker-03',
     expectedDeviceId: 'local-device-03',
+    relayUrl: 'https://a2a.vagwalsall.co.uk',
+    privateSourceExposed: false
+  });
+});
+
+app.post('/api/worker/heartbeat', directBridgeRawJson, async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+  const verified = directBridgeVerify(req, rawBody);
+
+  if (!verified.ok) {
+    return res.status(verified.status).json({
+      ok: false,
+      ...verified,
+      billable: false,
+      auditedOnly: true,
+      privateSourceExposed: false
+    });
+  }
+
+  const body = directBridgeParseBody(rawBody);
+  const workerId = directBridgeWorkerId(req, body);
+  const deviceId = directBridgeDeviceId(req, body);
+  const label = String(body.label || workerId);
+  const capabilities =
+    body.capabilities && typeof body.capabilities === 'object'
+      ? body.capabilities
+      : {};
+
+  await directBridgeEnsureTables();
+
+  if (pool) {
+    await pool.query(
+      `insert into worker_nodes (
+        id,
+        label,
+        status,
+        capabilities,
+        last_seen
+      )
+      values ($1, $2, 'online', $3, now())
+      on conflict (id) do update
+      set label = excluded.label,
+          status = 'online',
+          capabilities = excluded.capabilities,
+          last_seen = now()`,
+      [workerId, label, capabilities]
+    );
+  }
+
+  return res.status(200).json({
+    ok: true,
+    workerId,
+    deviceId,
+    status: 'online',
+    signatureMode: verified.signatureMode,
+    bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
+    mode: 'direct-override-quiet-bridge',
+    nextHeartbeatMs: 300000,
+    privateSourceExposed: false
+  });
+});
+
+app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+  const verified = directBridgeVerify(req, rawBody);
+
+  if (!verified.ok) {
+    return res.status(verified.status).json({
+      ok: false,
+      ...verified,
+      billable: false,
+      auditedOnly: true,
+      privateSourceExposed: false
+    });
+  }
+
+  const body = directBridgeParseBody(rawBody);
+  const workerId = String(body.targetWorker || body.workerId || 'laptop-worker-03');
+  const jobId = String(body.jobId || `job_${crypto.randomUUID()}`);
+  const agentId = String(body.agentId || body.workerId || 'local-reality-bridge');
+
+  const jobRecord = {
+    ...body,
+    jobId,
+    targetWorker: workerId,
+    route: 'direct-override-quiet-bridge',
+    receivedAt: new Date().toISOString(),
+    privateSourceExposed: false
+  };
+
+  await directBridgeEnsureTables();
+
+  if (pool) {
+    await pool.query(
+      `insert into inbound_funnel_jobs (
+        id,
+        agent_id,
+        source_ip,
+        source_shell,
+        bridge_serial,
+        status,
+        headers,
+        body
+      )
+      values ($1, $2, $3, $4, $5, 'queued', $6, $7)
+      on conflict (id) do update
+      set agent_id = excluded.agent_id,
+          source_ip = excluded.source_ip,
+          source_shell = excluded.source_shell,
+          bridge_serial = excluded.bridge_serial,
+          status = 'queued',
+          headers = excluded.headers,
+          body = excluded.body`,
+      [
+        jobId,
+        agentId,
+        req.ip,
+        'ASIOD-SHELL-002-PUBLIC-6FIELD',
+        'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
+        {
+          timestamp: verified.timestamp,
+          signatureMode: verified.signatureMode,
+          userAgent: req.get('user-agent') || ''
+        },
+        jobRecord
+      ]
+    );
+
+    await pool.query(
+      `insert into worker_jobs (
+        id,
+        target_worker,
+        processing_mode,
+        status,
+        body
+      )
+      values ($1, $2, 'local-worker', 'queued', $3)
+      on conflict (id) do update
+      set target_worker = excluded.target_worker,
+          processing_mode = excluded.processing_mode,
+          status = 'queued',
+          lease_until = null,
+          body = excluded.body`,
+      [jobId, workerId, jobRecord]
+    );
+  }
+
+  return res.status(202).json({
+    ok: true,
+    accepted: true,
+    status: 'queued',
+    jobId,
+    targetWorker: workerId,
+    signatureMode: verified.signatureMode,
+    bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
+    mode: 'direct-override-quiet-bridge',
+    privateSourceExposed: false
+  });
+});
+
+app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+  const verified = directBridgeVerify(req, rawBody);
+
+  if (!verified.ok) {
+    return res.status(verified.status).json({
+      ok: false,
+      ...verified,
+      billable: false,
+      auditedOnly: true,
+      privateSourceExposed: false
+    });
+  }
+
+  const body = directBridgeParseBody(rawBody);
+  const workerId = directBridgeWorkerId(req, body);
+  const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
+
+  await directBridgeEnsureTables();
+
+  let jobs = [];
+
+  if (pool) {
+    await pool.query(
+      `insert into worker_nodes (id, label, status, capabilities, last_seen)
+       values ($1, $1, 'online', '{}'::jsonb, now())
+       on conflict (id) do update
+       set status = 'online',
+           last_seen = now()`,
+      [workerId]
+    );
+
+    const result = await pool.query(
+      `select id, target_worker, processing_mode, status, body, created_at
+       from worker_jobs
+       where status = 'queued'
+         and (target_worker is null or target_worker = $1)
+       order by created_at asc
+       limit $2`,
+      [workerId, limit]
+    );
+
+    jobs = result.rows;
+  }
+
+  return res.status(200).json({
+    ok: true,
+    workerId,
+    count: jobs.length,
+    jobs,
+    nextPollMs: jobs.length ? 1000 : 300000,
+    signatureMode: verified.signatureMode,
+    bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
+    mode: 'direct-override-quiet-bridge',
     privateSourceExposed: false
   });
 });
