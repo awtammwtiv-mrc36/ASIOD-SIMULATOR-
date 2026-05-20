@@ -85,6 +85,18 @@ try {
 const app = express();
 
 app.set('trust proxy', 1);
+app.get('/api/bridge/health', (_req, res) => {
+  return res.status(200).json({
+    ok: true,
+    bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
+    mode: 'quiet-long-poll-worker-node',
+    serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET),
+    funnelSecretLength: String(process.env.FUNNEL_WEBHOOK_SECRET || '').length,
+    expectedWorkerId: 'laptop-worker-03',
+    expectedDeviceId: 'local-device-03',
+    privateSourceExposed: false
+  });
+});
 
 const PORT = process.env.PORT || 4242;
 
