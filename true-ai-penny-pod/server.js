@@ -22,12 +22,26 @@ let installHybridEngineBridgeTables = async function installFallbackBridgeTables
   await pool.query(`
     create table if not exists worker_nodes (
       id text primary key,
-      device_id text unique,
-      status text not null default 'active',
+      device_id text,
+      label text,
+      status text not null default 'offline',
+      capabilities jsonb not null default '{}'::jsonb,
+      last_seen timestamptz not null default now(),
       last_seen_at timestamptz,
       body jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now()
     );
+  `);
+
+  await pool.query(`
+    alter table worker_nodes add column if not exists device_id text;
+    alter table worker_nodes add column if not exists label text;
+    alter table worker_nodes add column if not exists status text not null default 'offline';
+    alter table worker_nodes add column if not exists capabilities jsonb not null default '{}'::jsonb;
+    alter table worker_nodes add column if not exists last_seen timestamptz not null default now();
+    alter table worker_nodes add column if not exists last_seen_at timestamptz;
+    alter table worker_nodes add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table worker_nodes add column if not exists created_at timestamptz not null default now();
   `);
 
   await pool.query(`
@@ -36,11 +50,27 @@ let installHybridEngineBridgeTables = async function installFallbackBridgeTables
       target_worker text,
       processing_mode text not null default 'local-worker',
       status text not null default 'queued',
+      lease_until timestamptz,
       body jsonb not null default '{}'::jsonb,
       result jsonb,
       created_at timestamptz not null default now(),
+      claimed_at timestamptz,
+      completed_at timestamptz,
       updated_at timestamptz not null default now()
     );
+  `);
+
+  await pool.query(`
+    alter table worker_jobs add column if not exists target_worker text;
+    alter table worker_jobs add column if not exists processing_mode text not null default 'local-worker';
+    alter table worker_jobs add column if not exists status text not null default 'queued';
+    alter table worker_jobs add column if not exists lease_until timestamptz;
+    alter table worker_jobs add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table worker_jobs add column if not exists result jsonb;
+    alter table worker_jobs add column if not exists created_at timestamptz not null default now();
+    alter table worker_jobs add column if not exists claimed_at timestamptz;
+    alter table worker_jobs add column if not exists completed_at timestamptz;
+    alter table worker_jobs add column if not exists updated_at timestamptz not null default now();
   `);
 
   await pool.query(`
@@ -51,7 +81,35 @@ let installHybridEngineBridgeTables = async function installFallbackBridgeTables
       packet_type text,
       status text not null default 'queued',
       body jsonb not null default '{}'::jsonb,
-      created_at timestamptz not null default now()
+      created_at timestamptz not null default now(),
+      claimed_at timestamptz,
+      completed_at timestamptz
+    );
+  `);
+
+  await pool.query(`
+    alter table bridge_packets add column if not exists device_id text;
+    alter table bridge_packets add column if not exists direction text not null default 'in';
+    alter table bridge_packets add column if not exists packet_type text;
+    alter table bridge_packets add column if not exists status text not null default 'queued';
+    alter table bridge_packets add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table bridge_packets add column if not exists created_at timestamptz not null default now();
+    alter table bridge_packets add column if not exists claimed_at timestamptz;
+    alter table bridge_packets add column if not exists completed_at timestamptz;
+  `);
+
+  await pool.query(`
+    create table if not exists inbound_funnel_jobs (
+      id text primary key,
+      agent_id text,
+      source_ip text,
+      source_shell text,
+      bridge_serial text,
+      status text not null default 'queued',
+      headers jsonb not null default '{}'::jsonb,
+      body jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      processed_at timestamptz
     );
   `);
 
@@ -85,14 +143,11 @@ try {
 const app = express();
 
 app.set('trust proxy', 1);
+
 const directBridgeRawJson = express.raw({
   type: 'application/json',
   limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
 });
-
-function directBridgeUtf8() {
-  return new TextEncoder();
-}
 
 function directBridgeSecret() {
   return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
@@ -226,12 +281,26 @@ async function directBridgeEnsureTables() {
   await pool.query(`
     create table if not exists worker_nodes (
       id text primary key,
+      device_id text,
       label text,
       status text not null default 'offline',
       capabilities jsonb not null default '{}'::jsonb,
       last_seen timestamptz not null default now(),
+      last_seen_at timestamptz,
+      body jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now()
     );
+  `);
+
+  await pool.query(`
+    alter table worker_nodes add column if not exists device_id text;
+    alter table worker_nodes add column if not exists label text;
+    alter table worker_nodes add column if not exists status text not null default 'offline';
+    alter table worker_nodes add column if not exists capabilities jsonb not null default '{}'::jsonb;
+    alter table worker_nodes add column if not exists last_seen timestamptz not null default now();
+    alter table worker_nodes add column if not exists last_seen_at timestamptz;
+    alter table worker_nodes add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table worker_nodes add column if not exists created_at timestamptz not null default now();
   `);
 
   await pool.query(`
@@ -245,8 +314,22 @@ async function directBridgeEnsureTables() {
       result jsonb,
       created_at timestamptz not null default now(),
       claimed_at timestamptz,
-      completed_at timestamptz
+      completed_at timestamptz,
+      updated_at timestamptz not null default now()
     );
+  `);
+
+  await pool.query(`
+    alter table worker_jobs add column if not exists target_worker text;
+    alter table worker_jobs add column if not exists processing_mode text not null default 'local-worker';
+    alter table worker_jobs add column if not exists status text not null default 'queued';
+    alter table worker_jobs add column if not exists lease_until timestamptz;
+    alter table worker_jobs add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table worker_jobs add column if not exists result jsonb;
+    alter table worker_jobs add column if not exists created_at timestamptz not null default now();
+    alter table worker_jobs add column if not exists claimed_at timestamptz;
+    alter table worker_jobs add column if not exists completed_at timestamptz;
+    alter table worker_jobs add column if not exists updated_at timestamptz not null default now();
   `);
 
   await pool.query(`
@@ -262,6 +345,31 @@ async function directBridgeEnsureTables() {
       created_at timestamptz not null default now(),
       processed_at timestamptz
     );
+  `);
+
+  await pool.query(`
+    create table if not exists bridge_packets (
+      id text primary key,
+      device_id text,
+      direction text not null default 'in',
+      packet_type text,
+      status text not null default 'queued',
+      body jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      claimed_at timestamptz,
+      completed_at timestamptz
+    );
+  `);
+
+  await pool.query(`
+    alter table bridge_packets add column if not exists device_id text;
+    alter table bridge_packets add column if not exists direction text not null default 'in';
+    alter table bridge_packets add column if not exists packet_type text;
+    alter table bridge_packets add column if not exists status text not null default 'queued';
+    alter table bridge_packets add column if not exists body jsonb not null default '{}'::jsonb;
+    alter table bridge_packets add column if not exists created_at timestamptz not null default now();
+    alter table bridge_packets add column if not exists claimed_at timestamptz;
+    alter table bridge_packets add column if not exists completed_at timestamptz;
   `);
 
   return true;
@@ -287,8 +395,11 @@ app.get('/api/bridge/health', async (_req, res) => {
     serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET),
     funnelSecretLength: directBridgeSecret().length,
     database,
-    expectedWorkerId: 'laptop-worker-03',
-    expectedDeviceId: 'local-device-03',
+    expectedWorkers: [
+      'laptop-worker-01',
+      'laptop-worker-02',
+      'laptop-worker-03'
+    ],
     relayUrl: 'https://a2a.vagwalsall.co.uk',
     privateSourceExposed: false
   });
@@ -323,18 +434,24 @@ app.post('/api/worker/heartbeat', directBridgeRawJson, async (req, res) => {
     await pool.query(
       `insert into worker_nodes (
         id,
+        device_id,
         label,
         status,
         capabilities,
-        last_seen
+        last_seen,
+        last_seen_at,
+        body
       )
-      values ($1, $2, 'online', $3, now())
+      values ($1, $2, $3, 'online', $4, now(), now(), $5)
       on conflict (id) do update
-      set label = excluded.label,
+      set device_id = excluded.device_id,
+          label = excluded.label,
           status = 'online',
           capabilities = excluded.capabilities,
-          last_seen = now()`,
-      [workerId, label, capabilities]
+          last_seen = now(),
+          last_seen_at = now(),
+          body = excluded.body`,
+      [workerId, deviceId, label, capabilities, body]
     );
   }
 
@@ -366,14 +483,24 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   }
 
   const body = directBridgeParseBody(rawBody);
-  const workerId = String(body.targetWorker || body.workerId || 'laptop-worker-03');
+  const suppliedTargetWorker = body.targetWorker || body.workerId || null;
+  const targetWorker = suppliedTargetWorker ? String(suppliedTargetWorker) : null;
   const jobId = String(body.jobId || `job_${crypto.randomUUID()}`);
+  const packetId = String(body.packetId || `packet_${crypto.randomUUID()}`);
   const agentId = String(body.agentId || body.workerId || 'local-reality-bridge');
 
   const jobRecord = {
     ...body,
     jobId,
-    targetWorker: workerId,
+    packetId,
+    targetWorker,
+    target_worker: targetWorker,
+    dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker',
+    eligibleWorkers: [
+      'laptop-worker-01',
+      'laptop-worker-02',
+      'laptop-worker-03'
+    ],
     route: 'direct-override-quiet-bridge',
     receivedAt: new Date().toISOString(),
     privateSourceExposed: false
@@ -423,17 +550,46 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
         target_worker,
         processing_mode,
         status,
-        body
+        body,
+        updated_at
       )
-      values ($1, $2, 'local-worker', 'queued', $3)
+      values ($1, $2, 'local-worker', 'queued', $3, now())
       on conflict (id) do update
       set target_worker = excluded.target_worker,
           processing_mode = excluded.processing_mode,
           status = 'queued',
           lease_until = null,
-          body = excluded.body`,
-      [jobId, workerId, jobRecord]
+          body = excluded.body,
+          updated_at = now()`,
+      [jobId, targetWorker, jobRecord]
     );
+
+    await pool.query(
+      `insert into bridge_packets (
+        id,
+        device_id,
+        direction,
+        packet_type,
+        status,
+        body
+      )
+      values ($1, $2, 'in', 'funnel', 'queued', $3)
+      on conflict (id) do update
+      set device_id = excluded.device_id,
+          direction = excluded.direction,
+          packet_type = excluded.packet_type,
+          status = 'queued',
+          body = excluded.body`,
+      [packetId, targetWorker || 'any-live-worker', jobRecord]
+    );
+
+    pushJobToMatchingWorkers(targetWorker, {
+      jobId,
+      packetId,
+      channel: 'funnel',
+      targetWorker,
+      dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker'
+    });
   }
 
   return res.status(202).json({
@@ -441,7 +597,10 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
     accepted: true,
     status: 'queued',
     jobId,
-    targetWorker: workerId,
+    packetId,
+    targetWorker,
+    target_worker: targetWorker,
+    dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker',
     signatureMode: verified.signatureMode,
     bridge: 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER',
     mode: 'direct-override-quiet-bridge',
@@ -465,6 +624,7 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
 
   const body = directBridgeParseBody(rawBody);
   const workerId = directBridgeWorkerId(req, body);
+  const deviceId = directBridgeDeviceId(req, body);
   const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
 
   await directBridgeEnsureTables();
@@ -473,12 +633,24 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
 
   if (pool) {
     await pool.query(
-      `insert into worker_nodes (id, label, status, capabilities, last_seen)
-       values ($1, $1, 'online', '{}'::jsonb, now())
+      `insert into worker_nodes (
+         id,
+         device_id,
+         label,
+         status,
+         capabilities,
+         last_seen,
+         last_seen_at,
+         body
+       )
+       values ($1, $2, $1, 'online', '{}'::jsonb, now(), now(), $3)
        on conflict (id) do update
-       set status = 'online',
-           last_seen = now()`,
-      [workerId]
+       set device_id = excluded.device_id,
+           status = 'online',
+           last_seen = now(),
+           last_seen_at = now(),
+           body = excluded.body`,
+      [workerId, deviceId, body]
     );
 
     const result = await pool.query(
@@ -497,6 +669,7 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   return res.status(200).json({
     ok: true,
     workerId,
+    deviceId,
     count: jobs.length,
     jobs,
     nextPollMs: jobs.length ? 1000 : 300000,
@@ -552,11 +725,7 @@ const localQuotes = new Map();
 const localOrders = new Map();
 const rateBuckets = new Map();
 
-/**
- * One-handshake worker wait channel (server push via SSE).
- * Worker connects once and stays connected. When jobs are queued, server pushes a "job" event.
- */
-const workerStreams = new Map(); // deviceId -> res
+const workerStreams = new Map();
 
 const legacyCoinLedger = [];
 const legacyCoinTotals = new Map();
@@ -657,6 +826,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/favicon.png',
 
   '/api/health',
+  '/api/bridge/health',
   '/api/agent-card',
   '/api/services',
   '/.well-known/true-ai.json',
@@ -692,8 +862,6 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/api/worker/poll',
   '/api/worker/claim',
   '/api/worker/result',
-
-  // One-handshake wait channel:
   '/api/worker/stream'
 ]);
 
@@ -755,6 +923,7 @@ const PUBLIC_API_SHELL = Object.freeze({
   localWorkerNodeSupported: true,
   publicInboundToWorker: false,
   workerPollingEnabled: true,
+  workerStreamEnabled: true,
   brainSimulatorBridgePublicAccess: false,
   integerLock784: true,
   ieee754Governance: false,
@@ -767,19 +936,26 @@ const SERVICE_CATALOGUE = Object.freeze([
     serviceId: 'basic-a2a-intake',
     shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
     name: 'Basic A2A Intake',
-    description: 'Minimum paid AI-to-AI intake, receipt creation, and catalogue write.',
-    unitPriceGbp: '15.00',
+    description: 'Direct paid AI-to-AI intake. No human worker selection. Paid request enters the AI queue and is claimed by any live worker.',
+    unitPriceGbp: '0.30',
+    priceLabel: '£0.30 test AI-to-AI intake',
     currency: 'gbp',
-    active: true
-  },
-  {
-    serviceId: 'single-file-auto-repair',
-    shellSerial: SHELL_REGISTRY.paidOrderLayer.shellSerial,
-    name: 'Single File Auto Repair',
-    description: 'Automated attempt to repair one corrupted file.',
-    unitPriceGbp: '15.00',
-    currency: 'gbp',
-    active: true
+    active: true,
+    stripeLink: STRIPE_LINK_A2A_3,
+    humanInterface: false,
+    customerSelectableWorker: false,
+    route: 'ir2ir',
+    dispatchMode: 'any-live-worker',
+    target_worker: null,
+    agentCard: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+    machineIntake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+    workerStream: 'https://a2a.vagwalsall.co.uk/api/worker/stream',
+    eligibleWorkers: [
+      'laptop-worker-01',
+      'laptop-worker-02',
+      'laptop-worker-03'
+    ],
+    privateSourceExposed: false
   },
   {
     serviceId: 'document-file-repair',
@@ -1121,54 +1297,54 @@ function renderPage({ title, body }) {
   <header>
     <a class="brand" href="/">
       <strong>True AI Penny Pod</strong>
-      <span>ASIOD public shell</span>
+      <span>ASIOD public AI shell</span>
     </a>
     <nav>
-      <a class="nav-link" href="/intake">Intake</a>
+      <a class="nav-link" href="/.well-known/agent-card.json">Agent Card</a>
       <a class="nav-link" href="/adverts">Adverts</a>
       <a class="nav-link" href="/api/health">API Health</a>
-      <a class="nav-link" href="/.well-known/agent-card.json">Agent Card</a>
+      <a class="nav-link" href="/api/services">Services</a>
     </nav>
   </header>
   <main>${body}</main>
-  <footer>Public shell only. Protected order, pod, receipt, worker, and brain routes require configured keys/signatures.</footer>
+  <footer>Public AI homepage only. Protected order, pod, receipt, worker, machine intake, and brain routes require configured keys/signatures.</footer>
 </body>
 </html>`;
 }
 
 function renderHomePage() {
   return renderPage({
-    title: 'Public Shell Live',
+    title: 'AI Shell Live',
     body: `
       <section class="hero">
         <div class="pill-row">
-          <span class="pill">PUBLIC SHELL ACTIVE</span>
-          <span class="pill">INTAKE RESTORED</span>
-          <span class="pill">ADVERTS RESTORED</span>
-          <span class="pill">HYBRID BRIDGE READY</span>
+          <span class="pill">AI HOMEPAGE ACTIVE</span>
+          <span class="pill">AGENT CARD LIVE</span>
+          <span class="pill">A2A MACHINE INTAKE READY</span>
+          <span class="pill">ANY LIVE WORKER DISPATCH</span>
         </div>
         <div>
           <h1>True AI Penny Pod</h1>
-          <p>Public two-string front door with protected paid-order, catalogue, receipt, hybrid-worker, and AI-to-AI routes behind the shell key layer.</p>
+          <p>AI-to-AI service shell with protected paid-order, catalogue, receipt, hybrid-worker, and machine-intake routes. Human intake is fallback only.</p>
         </div>
         <div class="pill-row">
-          <a class="button primary" href="/intake">Open intake</a>
-          <a class="button secondary" href="/adverts">View adverts</a>
-          <a class="button" href="/api/services">API services</a>
+          <a class="button primary" href="/.well-known/agent-card.json">AI connect</a>
+          <a class="button secondary" href="/api/services">API services</a>
+          <a class="button" href="/adverts">View adverts</a>
         </div>
       </section>
       <section class="grid">
         <article class="card">
-          <h2>Public intake</h2>
-          <p>Visible form restored at <code>/intake</code>, with channel pages for A2A, B2B, and crypto intake.</p>
+          <h2>AI-to-AI intake</h2>
+          <p>Machine intake is protected at <code>/api/a2a/intake</code>. The public discovery card is available at <code>/.well-known/agent-card.json</code>.</p>
         </article>
         <article class="card">
           <h2>Advert cards</h2>
-          <p>Visible advert page restored at <code>/adverts</code>, plus <code>/ads</code> and <code>/advertise</code> redirects.</p>
+          <p>Advert page remains visible at <code>/adverts</code>. Paid AI intake uses the Stripe A2A payment link and queues work automatically after payment.</p>
         </article>
         <article class="card">
           <h2>Worker bridge</h2>
-          <p>Protected worker routes remain available. One-handshake stream available at <code>/api/worker/stream</code>.</p>
+          <p>Worker jobs are queued with <code>target_worker = null</code> by default, so any live worker can claim them. One-handshake stream remains at <code>/api/worker/stream</code>.</p>
         </article>
       </section>
     `
@@ -1177,12 +1353,42 @@ function renderHomePage() {
 
 function renderAdvertCards() {
   const cards = [
-    { title: 'AI-to-AI Intake', price: '£3', text: 'Low-cost AI-to-AI entry, receipt creation, and first contact.', href: '/pay/a2a' },
-    { title: 'Weekly Access', price: '£15 / week', text: 'Weekly access using the configured Stripe weekly payment link.', href: '/pay/weekly' },
-    { title: 'Monthly Access', price: 'Monthly', text: 'Monthly payment advert using the configured Stripe monthly payment link.', href: '/pay/monthly' },
-    { title: 'Shattered File Triage', price: '£81+', text: 'Damaged file inspection and repair planning.', href: '/intake?service=shattered-file-triage' },
-    { title: 'Document File Repair', price: '£25+', text: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.', href: '/intake?service=document-file-repair' },
-    { title: 'Media File Repair', price: '£45+', text: 'Repair attempt for image, video, audio, archive, or heavier media files.', href: '/intake?service=media-file-repair' }
+    {
+      title: 'AI-to-AI Intake',
+      price: '£0.30',
+      text: 'Direct AI-to-AI entry. Payment creates an AI job and dispatches it to any live worker.',
+      href: '/pay/a2a'
+    },
+    {
+      title: 'Weekly Access',
+      price: '£15 / week',
+      text: 'Weekly access using the configured Stripe weekly payment link.',
+      href: '/pay/weekly'
+    },
+    {
+      title: 'Monthly Access',
+      price: 'Monthly',
+      text: 'Monthly payment advert using the configured Stripe monthly payment link.',
+      href: '/pay/monthly'
+    },
+    {
+      title: 'Shattered File Triage',
+      price: '£81+',
+      text: 'Damaged file inspection and repair planning.',
+      href: '/intake?service=shattered-file-triage'
+    },
+    {
+      title: 'Document File Repair',
+      price: '£25+',
+      text: 'Repair attempt for DOCX, PDF, XLSX, PPTX, text, or document-like files.',
+      href: '/intake?service=document-file-repair'
+    },
+    {
+      title: 'Media File Repair',
+      price: '£45+',
+      text: 'Repair attempt for image, video, audio, archive, or heavier media files.',
+      href: '/intake?service=media-file-repair'
+    }
   ];
 
   return cards.map((card) => `
@@ -1203,7 +1409,7 @@ function renderAdvertsPage() {
         <div class="pill-row">
           <span class="pill">ADVERTS LIVE</span>
           <span class="pill">STRIPE LINKS</span>
-          <span class="pill">SERVICE CARDS</span>
+          <span class="pill">AI SERVICE CARDS</span>
         </div>
         <h1>Adverts</h1>
         <p>Public advert cards and payment doors for the True AI Penny Pod service shell.</p>
@@ -1216,7 +1422,8 @@ function renderAdvertsPage() {
 function serviceOptions(selectedServiceId = '') {
   return SERVICE_CATALOGUE.map((service) => {
     const selected = service.serviceId === selectedServiceId ? ' selected' : '';
-    return `<option value="${escapeHtml(service.serviceId)}"${selected}>${escapeHtml(service.name)} — £${escapeHtml(service.unitPriceGbp)}</option>`;
+    const price = service.priceLabel || `£${service.unitPriceGbp}`;
+    return `<option value="${escapeHtml(service.serviceId)}"${selected}>${escapeHtml(service.name)} — ${escapeHtml(price)}</option>`;
   }).join('');
 }
 
@@ -1224,20 +1431,19 @@ function renderIntakePage({ channel = 'a2a', selectedServiceId = 'basic-a2a-inta
   const safeChannel = ['a2a', 'b2b', 'crypto'].includes(channel) ? channel : 'a2a';
 
   return renderPage({
-    title: 'Intake',
+    title: 'Human fallback intake',
     body: `
       <section class="hero">
         <div class="pill-row">
-          <span class="pill">INTAKE LIVE</span>
-          <span class="pill">PUBLIC FORM</span>
-          <span class="pill">WORKER QUEUE CAPABLE</span>
+          <span class="pill">HUMAN FALLBACK</span>
+          <span class="pill">A2A MACHINE ROUTE SEPARATE</span>
+          <span class="pill">ANY LIVE WORKER</span>
         </div>
-        <h1>Intake</h1>
-        <p>Submit a public intake request. This does not expose private source material. Protected API intakes remain behind shell keys.</p>
+        <h1>Human fallback intake</h1>
+        <p>This form is not the primary AI-to-AI service path. Machine agents should use <code>/api/a2a/intake</code> with the correct key/signature.</p>
         <div class="pill-row">
-          <a class="button" href="/intake/a2a">A2A</a>
-          <a class="button" href="/intake/b2b">B2B</a>
-          <a class="button" href="/intake/crypto">Crypto</a>
+          <a class="button primary" href="/.well-known/agent-card.json">AI connect</a>
+          <a class="button" href="/api/services">API services</a>
         </div>
       </section>
       <section class="panel">
@@ -1253,12 +1459,9 @@ function renderIntakePage({ channel = 'a2a', selectedServiceId = 'basic-a2a-inta
             <input name="contact" maxlength="160" placeholder="Contact or callback detail">
           </label>
           <label>Request details
-            <textarea name="message" maxlength="4000" placeholder="Write the intake request here"></textarea>
+            <textarea name="message" maxlength="4000" placeholder="Write the fallback intake request here"></textarea>
           </label>
-          <label>Target worker
-            <input name="targetWorker" maxlength="120" value="windows-laptop-worker-01">
-          </label>
-          <button class="button primary" type="submit">Submit intake</button>
+          <button class="button primary" type="submit">Submit fallback intake</button>
         </form>
       </section>
     `
@@ -1317,30 +1520,36 @@ function buildPublicApiAgentCard() {
     ok: true,
     service: 'ASIOD Public API Shell',
     version: '1.0.3-hybrid-intake-adverts',
-    api_base_url: APP_BASE_URL,
+    api_base_url: 'https://a2a.vagwalsall.co.uk',
     shell: PUBLIC_API_SHELL,
     endpoints: {
-      home: '/',
-      intake: '/intake',
-      adverts: '/adverts',
-      health: '/api/health',
-      services: '/api/services',
-      agent_card: '/api/agent-card',
-      true_ai_manifest: '/.well-known/true-ai.json',
-      agent_manifest: '/.well-known/agent-card.json',
-      a2a_intake: '/api/a2a/intake',
-      b2b_intake: '/api/b2b/intake',
-      crypto_intake: '/api/crypto/intake',
-      funnel_intake: '/api/funnel/intake',
-      worker_stream: '/api/worker/stream',
-      worker_heartbeat: '/api/worker/heartbeat',
-      worker_poll: '/api/worker/poll',
-      worker_claim: '/api/worker/claim',
-      worker_result: '/api/worker/result'
+      home: 'https://a2a.vagwalsall.co.uk/',
+      ai_home: 'https://a2a.vagwalsall.co.uk/',
+      human_intake: 'https://a2a.vagwalsall.co.uk/intake',
+      adverts: 'https://a2a.vagwalsall.co.uk/adverts',
+      health: 'https://a2a.vagwalsall.co.uk/api/health',
+      services: 'https://a2a.vagwalsall.co.uk/api/services',
+
+      agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+      true_ai_manifest: 'https://a2a.vagwalsall.co.uk/.well-known/true-ai.json',
+      agent_manifest: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+
+      intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+      a2a_intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+      b2b_intake: 'https://a2a.vagwalsall.co.uk/api/b2b/intake',
+      crypto_intake: 'https://a2a.vagwalsall.co.uk/api/crypto/intake',
+      funnel_intake: 'https://a2a.vagwalsall.co.uk/api/funnel/intake',
+
+      worker_stream: 'https://a2a.vagwalsall.co.uk/api/worker/stream',
+      worker_heartbeat: 'https://a2a.vagwalsall.co.uk/api/worker/heartbeat',
+      worker_poll: 'https://a2a.vagwalsall.co.uk/api/worker/poll',
+      worker_claim: 'https://a2a.vagwalsall.co.uk/api/worker/claim',
+      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result'
     },
     security: {
       publicRoutesLimited: true,
-      publicIntakePageAvailable: true,
+      aiHomepageAvailable: true,
+      publicHumanIntakeFallbackAvailable: true,
       publicAdvertsPageAvailable: true,
       protectedRoutesRequireShellKey: true,
       signedBridgePacketsRequired: true,
@@ -1367,7 +1576,9 @@ function buildPublicApiAgentCard() {
       privateSourceSerialPublic: false
     },
     rules: [
-      'Public homepage, intake page, advert page, health, service discovery, and manifests are visible.',
+      'Public AI homepage, advert page, health, service discovery, and manifests are visible; human intake is fallback only; machine intake is protected.',
+      'AI-to-AI work must enter through /api/a2a/intake or Stripe-paid A2A job creation, not through a customer-selected worker form.',
+      'Jobs default to target_worker = null so any live worker can claim them.',
       'Private source layer remains sealed and background-only.',
       'No public route returns private source material.',
       'No secret key, database URL, Stripe key, webhook secret, or internal credential is returned.',
@@ -1440,7 +1651,7 @@ function parsePublicIntake(req, res, next) {
       addLegacyCoins(req, 'public-form-invalid-body', 10, 400);
       return res.status(400).send(renderPage({
         title: 'Intake body rejected',
-        body: '<section class="panel"><h1>Intake body rejected.</h1><p>The form was too large or malformed.</p><a class="button" href="/intake">Back to intake</a></section>'
+        body: '<section class="panel"><h1>Intake body rejected.</h1><p>The form was too large or malformed.</p><a class="button" href="/intake">Back to fallback intake</a></section>'
       }));
     }
 
@@ -1514,10 +1725,6 @@ function hostGate(req, res, next) {
   return res.status(403).end();
 }
 
-/**
- * NOTE: Keeping your corsGate exactly as you supplied it.
- * If you later want "privacy closed", you can remove this and stop browser-origin fetch traffic.
- */
 function corsGate(req, res, next) {
   const path = cleanRequestPath(req.path || '/');
 
@@ -1575,6 +1782,7 @@ function fastDropGate(req, res, next) {
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
 
   const blockedAgentAllowedPaths = new Set([
+    '/',
     '/health',
     '/api/health',
     '/api/agent-card',
@@ -1695,7 +1903,6 @@ if (typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
 
-/** SSE helpers */
 function sseWrite(res, event, dataObj) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(dataObj)}\n\n`);
@@ -1704,6 +1911,7 @@ function sseWrite(res, event, dataObj) {
 function pushJobToWorker(targetWorker, jobEnvelope) {
   const stream = workerStreams.get(String(targetWorker || ''));
   if (!stream) return false;
+
   try {
     sseWrite(stream, 'job', jobEnvelope);
     return true;
@@ -1711,6 +1919,28 @@ function pushJobToWorker(targetWorker, jobEnvelope) {
     workerStreams.delete(String(targetWorker || ''));
     return false;
   }
+}
+
+function pushJobToMatchingWorkers(targetWorker, jobEnvelope) {
+  if (targetWorker) {
+    return pushJobToWorker(targetWorker, jobEnvelope) ? 1 : 0;
+  }
+
+  let pushed = 0;
+
+  for (const [workerId, stream] of workerStreams.entries()) {
+    try {
+      sseWrite(stream, 'job', {
+        ...jobEnvelope,
+        pushedTo: workerId
+      });
+      pushed += 1;
+    } catch {
+      workerStreams.delete(workerId);
+    }
+  }
+
+  return pushed;
 }
 
 async function writeCatalogueRecord({
@@ -1738,6 +1968,117 @@ async function writeCatalogueRecord({
   );
 
   return true;
+}
+
+async function queueAnyLiveWorkerJob({
+  channel = 'a2a',
+  source = 'machine-intake',
+  route = 'machine-intake-to-any-live-worker',
+  externalId = null,
+  payload = {},
+  receiptId = null,
+  units = 0
+} = {}) {
+  const idSeed = externalId || uuidv4();
+  const idHash = crypto.createHash('sha256').update(`${source}:${idSeed}`).digest('hex').slice(0, 32);
+  const jobId = payload.jobId ? String(payload.jobId) : `job_${idHash}`;
+  const packetId = payload.packetId ? String(payload.packetId) : `packet_${idHash}`;
+  const targetWorker = payload.targetWorker ? String(payload.targetWorker) : null;
+
+  const jobRecord = {
+    ...payload,
+    jobId,
+    packetId,
+    channel,
+    targetWorker,
+    target_worker: targetWorker,
+    dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker',
+    eligibleWorkers: [
+      'laptop-worker-01',
+      'laptop-worker-02',
+      'laptop-worker-03'
+    ],
+    source,
+    route,
+    receiptId,
+    shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
+    shellStatus: SHELL_REGISTRY.externalPublicLayer.status,
+    hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
+    brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
+    privateSourceExposed: false,
+    receivedAt: new Date().toISOString()
+  };
+
+  if (pool) {
+    await directBridgeEnsureTables();
+
+    await pool.query(
+      `insert into worker_jobs (
+        id,
+        target_worker,
+        processing_mode,
+        status,
+        body,
+        updated_at
+      )
+      values ($1, $2, 'local-worker', 'queued', $3, now())
+      on conflict (id) do update
+      set target_worker = excluded.target_worker,
+          processing_mode = excluded.processing_mode,
+          status = 'queued',
+          body = excluded.body,
+          updated_at = now()`,
+      [jobId, targetWorker, jobRecord]
+    );
+
+    await pool.query(
+      `insert into bridge_packets (
+        id,
+        device_id,
+        direction,
+        packet_type,
+        status,
+        body
+      )
+      values ($1, $2, 'in', $3, 'queued', $4)
+      on conflict (id) do update
+      set device_id = excluded.device_id,
+          direction = excluded.direction,
+          packet_type = excluded.packet_type,
+          status = 'queued',
+          body = excluded.body`,
+      [packetId, targetWorker || 'any-live-worker', channel, jobRecord]
+    );
+
+    await writeCatalogueRecord({
+      id: `cat_${jobId}`,
+      agentId: channel,
+      recordType: `api_${channel}_worker_job`,
+      title: `Worker job queued: ${jobId}`,
+      body: jobRecord,
+      units
+    });
+
+    pushJobToMatchingWorkers(targetWorker, {
+      jobId,
+      packetId,
+      channel,
+      targetWorker,
+      receiptId,
+      dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker'
+    });
+  }
+
+  return {
+    ok: true,
+    jobId,
+    packetId,
+    targetWorker,
+    target_worker: targetWorker,
+    dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker',
+    workerQueueStored: Boolean(pool),
+    jobRecord
+  };
 }
 
 async function createApiReceipt(channel, payload = {}) {
@@ -1968,111 +2309,81 @@ async function createStripeCheckoutForOrder(order) {
   return order.payment;
 }
 
+async function queueStripeA2AJob(event) {
+  const stripeObject = event?.data?.object || {};
+  const eventId = event?.id || stripeObject.id || uuidv4();
+  const metadata = stripeObject.metadata && typeof stripeObject.metadata === 'object'
+    ? stripeObject.metadata
+    : {};
+
+  const serviceId = String(metadata.serviceId || metadata.service || 'basic-a2a-intake');
+
+  const payload = {
+    stripeEventId: eventId,
+    stripeEventType: event.type,
+    stripeObjectId: stripeObject.id || null,
+    stripePaymentStatus: stripeObject.payment_status || stripeObject.status || null,
+    stripePaymentLink: stripeObject.payment_link || null,
+    stripeCustomer: stripeObject.customer || null,
+    stripeCustomerEmail: stripeObject.customer_details?.email || stripeObject.customer_email || null,
+    amountTotal: stripeObject.amount_total ?? null,
+    currency: stripeObject.currency || 'gbp',
+    serviceId,
+    source: 'stripe-paid-a2a',
+    route: 'stripe-payment-to-any-live-worker',
+    privateSourceExposed: false
+  };
+
+  return queueAnyLiveWorkerJob({
+    channel: 'a2a',
+    source: 'stripe-paid-a2a',
+    route: 'stripe-payment-to-any-live-worker',
+    externalId: eventId,
+    payload,
+    receiptId: metadata.receiptId || null,
+    units: Number(metadata.units || 0)
+  });
+}
+
 async function handleApiIntake(channel, req, res) {
   try {
     const incomingBody = req.body || {};
-    const jobId = `job_${uuidv4()}`;
-    const packetId = `packet_${uuidv4()}`;
-
-    const targetWorker = String(
-      incomingBody.targetWorker ||
-      incomingBody.workerId ||
-      'windows-laptop-worker-01'
-    );
 
     const receipt = await createApiReceipt(channel, {
       ...incomingBody,
-      jobId,
-      packetId,
-      targetWorker,
-      source: `${channel}-webcard`,
+      targetWorker: incomingBody.targetWorker || null,
+      dispatchMode: incomingBody.targetWorker ? 'specific-worker' : 'any-live-worker',
+      source: `${channel}-machine-intake`,
       shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
       shellStatus: SHELL_REGISTRY.externalPublicLayer.status
     });
 
-    const jobRecord = {
-      ...incomingBody,
-      jobId,
-      packetId,
+    const queued = await queueAnyLiveWorkerJob({
       channel,
-      targetWorker,
-      source: `${channel}-webcard`,
-      route: 'webcard-to-local-worker',
+      source: `${channel}-machine-intake`,
+      route: 'protected-machine-intake-to-any-live-worker',
+      externalId: receipt.receiptId,
+      payload: {
+        ...incomingBody,
+        receiptId: receipt.receiptId,
+        privateSourceExposed: false
+      },
       receiptId: receipt.receiptId,
-      shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
-      shellStatus: SHELL_REGISTRY.externalPublicLayer.status,
-      hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
-      brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
-      privateSourceExposed: false,
-      receivedAt: new Date().toISOString()
-    };
-
-    if (pool) {
-      await pool.query(
-        `insert into worker_jobs (
-          id,
-          target_worker,
-          processing_mode,
-          status,
-          body
-        )
-        values ($1, $2, 'local-worker', 'queued', $3)
-        on conflict (id) do update
-        set target_worker = excluded.target_worker,
-            processing_mode = excluded.processing_mode,
-            status = 'queued',
-            body = excluded.body`,
-        [jobId, targetWorker, jobRecord]
-      );
-
-      await pool.query(
-        `insert into bridge_packets (
-          id,
-          device_id,
-          direction,
-          packet_type,
-          status,
-          body
-        )
-        values ($1, $2, 'in', $3, 'queued', $4)
-        on conflict (id) do update
-        set device_id = excluded.device_id,
-            direction = excluded.direction,
-            packet_type = excluded.packet_type,
-            status = 'queued',
-            body = excluded.body`,
-        [packetId, targetWorker, channel, jobRecord]
-      );
-
-      await writeCatalogueRecord({
-        id: `cat_${jobId}`,
-        agentId: channel,
-        recordType: `api_${channel}_worker_job`,
-        title: `Worker job queued: ${jobId}`,
-        body: jobRecord,
-        units: Number(incomingBody.units || 0)
-      });
-
-      // One-handshake push: if worker is connected via /api/worker/stream, notify immediately.
-      pushJobToWorker(targetWorker, {
-        jobId,
-        packetId,
-        channel,
-        targetWorker,
-        receiptId: receipt.receiptId
-      });
-    }
+      units: Number(incomingBody.units || 0)
+    });
 
     return res.status(202).json({
       ok: true,
       channel,
       status: 'queued',
-      jobId,
-      packetId,
-      targetWorker,
+      jobId: queued.jobId,
+      packetId: queued.packetId,
+      targetWorker: queued.targetWorker,
+      target_worker: queued.target_worker,
+      dispatchMode: queued.dispatchMode,
       receiptId: receipt.receiptId,
-      workerQueueStored: Boolean(pool),
-      source: `${channel}-webcard`,
+      workerQueueStored: queued.workerQueueStored,
+      source: `${channel}-machine-intake`,
       next: {
         workerStream: '/api/worker/stream',
         workerPoll: '/api/worker/poll',
@@ -2152,16 +2463,12 @@ async function initDb() {
   `);
 
   await installHybridEngineBridgeTables(pool);
+  await directBridgeEnsureTables();
 
   console.log('Catalogue database ready.');
 }
 
-function installFallbackHybridEngineBridgeRoutes() {
-  app.post('/api/funnel/intake', protectedJson(async (req, res) => {
-    return handleApiIntake('funnel', req, res);
-  }));
-
-  // One-handshake worker stream (SSE). Worker connects once and waits.
+function installWorkerStreamRouteOnce() {
   app.get('/api/worker/stream', protectedNoBody(async (req, res) => {
     if (!pool) {
       return res.status(503).json({
@@ -2170,7 +2477,35 @@ function installFallbackHybridEngineBridgeRoutes() {
       });
     }
 
-    const deviceId = String(req.query?.deviceId || 'windows-laptop-worker-01');
+    const deviceId = String(req.query?.deviceId || req.query?.workerId || 'laptop-worker-01');
+
+    await directBridgeEnsureTables();
+
+    await pool.query(
+      `insert into worker_nodes (
+        id,
+        device_id,
+        label,
+        status,
+        capabilities,
+        last_seen,
+        last_seen_at,
+        body
+      )
+      values ($1, $1, $1, 'online', '{}'::jsonb, now(), now(), $2)
+      on conflict (id) do update
+      set status = 'online',
+          last_seen = now(),
+          last_seen_at = now(),
+          body = excluded.body`,
+      [
+        deviceId,
+        {
+          stream: true,
+          connectedAt: new Date().toISOString()
+        }
+      ]
+    );
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2178,7 +2513,13 @@ function installFallbackHybridEngineBridgeRoutes() {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
 
-    sseWrite(res, 'hello', { ok: true, deviceId, status: 'connected' });
+    sseWrite(res, 'hello', {
+      ok: true,
+      deviceId,
+      status: 'connected',
+      mode: 'one-handshake-worker-stream',
+      privateSourceExposed: false
+    });
 
     workerStreams.set(deviceId, res);
 
@@ -2186,6 +2527,12 @@ function installFallbackHybridEngineBridgeRoutes() {
       const current = workerStreams.get(deviceId);
       if (current === res) workerStreams.delete(deviceId);
     });
+  }));
+}
+
+function installFallbackHybridEngineBridgeRoutes() {
+  app.post('/api/funnel/intake', protectedJson(async (req, res) => {
+    return handleApiIntake('funnel', req, res);
   }));
 
   app.post('/api/worker/heartbeat', protectedJson(async (req, res) => {
@@ -2196,16 +2543,28 @@ function installFallbackHybridEngineBridgeRoutes() {
       });
     }
 
-    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'windows-laptop-worker-01');
+    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'laptop-worker-01');
+
+    await directBridgeEnsureTables();
 
     await pool.query(
-      `insert into worker_nodes (id, device_id, status, last_seen_at, body)
-       values ($1, $2, 'active', now(), $3)
-       on conflict (device_id) do update
+      `insert into worker_nodes (
+        id,
+        device_id,
+        label,
+        status,
+        capabilities,
+        last_seen,
+        last_seen_at,
+        body
+      )
+       values ($1, $1, $1, 'active', '{}'::jsonb, now(), now(), $2)
+       on conflict (id) do update
        set status = 'active',
+           last_seen = now(),
            last_seen_at = now(),
            body = excluded.body`,
-      [`node_${deviceId}`, deviceId, req.body || {}]
+      [deviceId, req.body || {}]
     );
 
     return res.status(200).json({
@@ -2224,7 +2583,7 @@ function installFallbackHybridEngineBridgeRoutes() {
       });
     }
 
-    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'windows-laptop-worker-01');
+    const deviceId = String(req.body?.deviceId || req.body?.workerId || 'laptop-worker-01');
 
     const result = await pool.query(
       `select id, target_worker, processing_mode, status, body, created_at
@@ -2236,7 +2595,6 @@ function installFallbackHybridEngineBridgeRoutes() {
       [deviceId]
     );
 
-    // LOW-DATA correction: if no jobs, return 204 and advise backoff.
     if (!result.rows.length) {
       res.setHeader('Retry-After', '300');
       return res.status(204).end();
@@ -2260,6 +2618,7 @@ function installFallbackHybridEngineBridgeRoutes() {
     }
 
     const jobId = String(req.body?.jobId || '');
+    const workerId = String(req.body?.workerId || req.body?.deviceId || '');
 
     if (!jobId) {
       return res.status(400).json({
@@ -2271,10 +2630,12 @@ function installFallbackHybridEngineBridgeRoutes() {
     const result = await pool.query(
       `update worker_jobs
        set status = 'claimed',
+           target_worker = coalesce(target_worker, nullif($2, '')),
+           claimed_at = now(),
            updated_at = now()
        where id = $1 and status = 'queued'
        returning id, target_worker, processing_mode, status, body, created_at`,
-      [jobId]
+      [jobId, workerId]
     );
 
     return res.status(200).json({
@@ -2307,6 +2668,7 @@ function installFallbackHybridEngineBridgeRoutes() {
       `update worker_jobs
        set status = 'completed',
            result = $2,
+           completed_at = now(),
            updated_at = now()
        where id = $1
        returning id, target_worker, processing_mode, status, body, result, created_at, updated_at`,
@@ -2341,9 +2703,9 @@ function installFallbackHybridEngineBridgeRoutes() {
     }
 
     const result = await pool.query(
-      `select id, device_id, status, last_seen_at, body, created_at
+      `select id, device_id, label, status, capabilities, last_seen, last_seen_at, body, created_at
        from worker_nodes
-       order by last_seen_at desc nulls last, created_at desc
+       order by last_seen desc nulls last, last_seen_at desc nulls last, created_at desc
        limit 50`
     );
 
@@ -2431,9 +2793,34 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json', limit: '128k
 
   console.log(`Stripe webhook received: ${event.type}`);
 
+  let queued = null;
+
+  if (
+    event.type === 'checkout.session.completed' ||
+    event.type === 'checkout.session.async_payment_succeeded'
+  ) {
+    try {
+      queued = await queueStripeA2AJob(event);
+    } catch (error) {
+      console.error('Stripe paid A2A queue failed:', error);
+      return res.status(500).json({
+        received: true,
+        type: event.type,
+        queued: false,
+        error: 'stripe-paid-a2a-queue-failed',
+        privateSourceExposed: false
+      });
+    }
+  }
+
   return res.status(200).json({
     received: true,
-    type: event.type
+    type: event.type,
+    queued: Boolean(queued),
+    jobId: queued?.jobId || null,
+    target_worker: queued?.target_worker ?? null,
+    dispatchMode: queued?.dispatchMode || null,
+    privateSourceExposed: false
   });
 });
 
@@ -2449,7 +2836,7 @@ function redirectToPaymentLink(res, paymentLink, label) {
 }
 
 app.get('/pay/a2a', (_req, res) => {
-  return redirectToPaymentLink(res, STRIPE_LINK_A2A_3, 'AI-to-AI £3');
+  return redirectToPaymentLink(res, STRIPE_LINK_A2A_3, 'AI-to-AI £0.30');
 });
 
 app.get('/pay/weekly', (_req, res) => {
@@ -2487,15 +2874,16 @@ app.get('/intake/crypto', (req, res) => {
 app.post('/intake/public', parsePublicIntake, async (req, res) => {
   const channel = ['a2a', 'b2b', 'crypto'].includes(req.body?.channel) ? req.body.channel : 'a2a';
   const serviceId = String(req.body?.serviceId || 'basic-a2a-intake');
-  const targetWorker = String(req.body?.targetWorker || 'windows-laptop-worker-01');
 
   const publicPayload = {
     serviceId,
     requester: String(req.body?.requester || '').slice(0, 120),
     contact: String(req.body?.contact || '').slice(0, 160),
     message: String(req.body?.message || '').slice(0, 4000),
-    targetWorker,
-    source: 'public-intake-form'
+    targetWorker: null,
+    target_worker: null,
+    dispatchMode: 'any-live-worker',
+    source: 'public-fallback-intake-form'
   };
 
   try {
@@ -2506,76 +2894,39 @@ app.post('/intake/public', parsePublicIntake, async (req, res) => {
       shellStatus: SHELL_REGISTRY.freeFrontDoor.status
     });
 
-    if (pool) {
-      const jobId = `job_${uuidv4()}`;
-      const packetId = `packet_${uuidv4()}`;
-
-      const jobRecord = {
-        ...publicPayload,
-        jobId,
-        packetId,
-        channel,
-        targetWorker,
-        receiptId: receipt.receiptId,
-        route: 'public-form-to-local-worker',
-        privateSourceExposed: false,
-        receivedAt: new Date().toISOString()
-      };
-
-      await pool.query(
-        `insert into worker_jobs (id, target_worker, processing_mode, status, body)
-         values ($1, $2, 'local-worker', 'queued', $3)
-         on conflict (id) do update
-         set target_worker = excluded.target_worker,
-             processing_mode = excluded.processing_mode,
-             status = 'queued',
-             body = excluded.body`,
-        [jobId, targetWorker, jobRecord]
-      );
-
-      await pool.query(
-        `insert into bridge_packets (id, device_id, direction, packet_type, status, body)
-         values ($1, $2, 'in', $3, 'queued', $4)
-         on conflict (id) do update
-         set device_id = excluded.device_id,
-             direction = excluded.direction,
-             packet_type = excluded.packet_type,
-             status = 'queued',
-             body = excluded.body`,
-        [packetId, targetWorker, `public-${channel}`, jobRecord]
-      );
-
-      // One-handshake push for public intake as well:
-      pushJobToWorker(targetWorker, {
-        jobId,
-        packetId,
-        channel: `public-${channel}`,
-        targetWorker,
-        receiptId: receipt.receiptId
-      });
-    }
+    const queued = await queueAnyLiveWorkerJob({
+      channel: `public-${channel}`,
+      source: 'public-fallback-intake-form',
+      route: 'public-fallback-form-to-any-live-worker',
+      externalId: receipt.receiptId,
+      payload: publicPayload,
+      receiptId: receipt.receiptId,
+      units: 0
+    });
 
     return res.status(202).type('html').send(renderPage({
-      title: 'Intake received',
+      title: 'Fallback intake received',
       body: `
         <section class="panel">
-          <h1>Intake received.</h1>
-          <p>Your public intake was accepted by the shell.</p>
+          <h1>Fallback intake received.</h1>
+          <p>The fallback intake was accepted by the shell and queued for any live worker.</p>
           <p><strong>Receipt:</strong> ${escapeHtml(receipt.receiptId)}</p>
+          <p><strong>Job:</strong> ${escapeHtml(queued.jobId)}</p>
+          <p><strong>Dispatch:</strong> ${escapeHtml(queued.dispatchMode)}</p>
           <p><strong>Database queue:</strong> ${pool ? 'stored' : 'not configured'}</p>
           <div class="pill-row">
-            <a class="button primary" href="/adverts">View adverts</a>
-            <a class="button" href="/intake">New intake</a>
+            <a class="button primary" href="/.well-known/agent-card.json">AI connect</a>
+            <a class="button" href="/adverts">View adverts</a>
           </div>
         </section>
       `
     }));
   } catch (error) {
-    console.error('Public intake failed:', error);
+    console.error('Public fallback intake failed:', error);
 
     return res.status(500).type('html').send(renderPage({
-      title: 'Intake failed',
-      body: '<section class="panel"><h1>Intake failed.</h1><p>The public shell could not store the intake.</p><a class="button" href="/intake">Back to intake</a></section>'
+      title: 'Fallback intake failed',
+      body: '<section class="panel"><h1>Fallback intake failed.</h1><p>The public shell could not store the fallback intake.</p><a class="button" href="/intake">Back to fallback intake</a></section>'
     }));
   }
 });
@@ -2604,8 +2955,8 @@ app.get('/sitemap.xml', (_req, res) => {
   return res.status(200).type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${APP_BASE_URL}/</loc></url>
-  <url><loc>${APP_BASE_URL}/intake</loc></url>
   <url><loc>${APP_BASE_URL}/adverts</loc></url>
+  <url><loc>${APP_BASE_URL}/.well-known/agent-card.json</loc></url>
 </urlset>
 `);
 });
@@ -2619,7 +2970,9 @@ app.get('/health', (_req, res) => {
     service: 'True AI Penny Pod',
     version: '1.0.3-hybrid-intake-adverts',
     status: 'live',
-    publicPages: ['/', '/intake', '/adverts'],
+    publicPages: ['/', '/adverts', '/.well-known/agent-card.json'],
+    humanFallback: '/intake',
+    machineIntake: '/api/a2a/intake',
     privateSourceExposed: false,
     privateSourceSerialPublic: false,
     integerLock784: true,
@@ -2634,7 +2987,7 @@ app.get('/api/health', (_req, res) => {
     service: 'ASIOD Public API Shell',
     version: '1.0.3-hybrid-intake-adverts',
     status: 'live',
-    mode: 'two-string-public-front-door',
+    mode: 'two-string-public-ai-front-door',
     shell: PUBLIC_API_SHELL,
     security: buildPublicApiAgentCard().security
   });
@@ -2653,23 +3006,32 @@ app.get('/api/services', (_req, res) => {
     cataloguePublic: false,
     paymentPublic: false,
     publicPages: {
-      home: '/',
-      intake: '/intake',
-      adverts: '/adverts',
-      ads: '/ads',
-      advertise: '/advertise'
+      home: 'https://a2a.vagwalsall.co.uk/',
+      agentCard: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+      adverts: 'https://a2a.vagwalsall.co.uk/adverts',
+      humanFallback: 'https://a2a.vagwalsall.co.uk/intake'
+    },
+    machineRoutes: {
+      a2aIntake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+      workerStream: 'https://a2a.vagwalsall.co.uk/api/worker/stream'
     },
     services: SERVICE_CATALOGUE.map((service) => ({
       serviceId: service.serviceId,
       name: service.name,
       description: service.description,
       unitPriceGbp: service.unitPriceGbp,
+      priceLabel: service.priceLabel || null,
       currency: service.currency,
-      active: service.active
+      active: service.active,
+      humanInterface: Boolean(service.humanInterface),
+      customerSelectableWorker: Boolean(service.customerSelectableWorker),
+      dispatchMode: service.dispatchMode || null,
+      machineIntake: service.machineIntake || null,
+      agentCard: service.agentCard || null
     })),
     hybridEngineWorkerBridge: HYBRID_ENGINE_WORKER_BRIDGE.bridgeSerial,
     brainSimulatorBridge: BRAIN_SIMULATOR_BRIDGE.bridgeSerial,
-    message: 'Public service discovery is limited to the two-string free tier.'
+    message: 'Public service discovery is AI-first; machine intake remains protected.'
   });
 });
 
@@ -2681,7 +3043,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
     version: '1.0.3-hybrid-intake-adverts',
     type: 'public_discovery_manifest',
     status: 'active',
-    api_base_url: APP_BASE_URL,
+    api_base_url: 'https://a2a.vagwalsall.co.uk',
     publicShell: card.shell,
     security: card.security,
     publicEndpoints: card.endpoints,
@@ -2694,13 +3056,13 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     protocolVersion: 'v1.0',
     name: 'True AI Penny Pod',
     description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, hybrid worker dispatch, and authorised shattered-file recovery intake.',
-    url: APP_BASE_URL,
+    url: 'https://a2a.vagwalsall.co.uk/',
     provider: {
       organization: 'Jt Browne / ASIOD784'
     },
     version: '1.0.3-hybrid-intake-adverts',
     capabilities: {
-      streaming: false,
+      streaming: true,
       pushNotifications: false,
       stateTransitionHistory: true
     },
@@ -3179,6 +3541,8 @@ app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
     message: 'Shattered file record stored.'
   });
 }));
+
+installWorkerStreamRouteOnce();
 
 if (typeof installHybridEngineBridgeRoutes === 'function') {
   installHybridEngineBridgeRoutes({
