@@ -1699,9 +1699,17 @@ function protectedNoBody(handler) {
   };
 }
 
+function isStripeWebhookPath(req) {
+  return cleanRequestPath(req.path || '/') === '/stripe/webhook';
+}
+
 function hostGate(req, res, next) {
   const host = normaliseHost(req.get('host'));
   const path = cleanRequestPath(req.path || '/');
+
+  if (isStripeWebhookPath(req)) {
+    return next();
+  }
 
   if (isAllowedHost(host)) {
     return next();
@@ -1712,7 +1720,8 @@ function hostGate(req, res, next) {
       path === '/.well-known/agent-card.json' ||
       path === '/.well-known/true-ai.json' ||
       path === '/health' ||
-      path === '/api/health'
+      path === '/api/health' ||
+      path === '/stripe/webhook'
     ) {
       return next();
     }
@@ -1800,6 +1809,10 @@ function fastDropGate(req, res, next) {
 }
 
 function ipDenyGate(req, res, next) {
+  if (isStripeWebhookPath(req)) {
+    return next();
+  }
+
   const ip = getClientIp(req);
 
   const blocked =
@@ -1856,6 +1869,10 @@ function quarantineGate(req, res, next) {
 }
 
 function rateLimit(req, res, next) {
+  if (isStripeWebhookPath(req)) {
+    return next();
+  }
+
   const now = Date.now();
   const windowMs = Number.isFinite(RATE_LIMIT_WINDOW_MS) && RATE_LIMIT_WINDOW_MS > 0
     ? RATE_LIMIT_WINDOW_MS
