@@ -1791,14 +1791,39 @@ function fastDropGate(req, res, next) {
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
 
   const blockedAgentAllowedPaths = new Set([
-    '/',
-    '/health',
-    '/api/health',
-    '/api/agent-card',
-    '/api/services',
-    '/.well-known/agent-card.json',
-    '/.well-known/true-ai.json',
-    '/stripe/webhook'
+  
+  '/health',
+  '/api/health',
+  '/api/agent-card',
+  '/api/services',
+
+  '/.well-known/agent-card.json',
+  '/.well-known/true-ai.json',
+
+  '/adverts',
+  '/ads',
+  '/advertise',
+  '/intake',
+  '/intake/a2a',
+  '/intake/b2b',
+  '/intake/crypto',
+
+  '/pay/a2a',
+  '/pay/weekly',
+  '/pay/monthly',
+
+  '/stripe/webhook',
+
+  '/api/a2a/intake',
+  '/api/b2b/intake',
+  '/api/crypto/intake',
+  '/api/funnel/intake',
+
+  '/api/worker/heartbeat',
+  '/api/worker/poll',
+  '/api/worker/claim',
+  '/api/worker/result',
+  '/api/worker/stream'
   ]);
 
   if (blockedAgent && !blockedAgentAllowedPaths.has(path)) {
