@@ -619,13 +619,18 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     },
     version: '1.0.4-executable-784',
     capabilities: {
-      streaming: false,
-      pushNotifications: false,
-      stateTransitionHistory: true,
-      executableEndpoint: true,
-      integerLock784: true
-    },
-    authentication: {
+  execute_status: {
+    description: 'Check live ASIOD executable status, 784 lock status, and sealed private-source state.',
+    endpoint: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+    method: 'POST',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  }
+},
+authentication: {
       schemes: ['apiKey', 'signed-hmac-packet'],
       description: 'Public executable handshake is available. Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
     },
