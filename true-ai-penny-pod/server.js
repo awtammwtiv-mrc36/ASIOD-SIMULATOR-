@@ -608,6 +608,54 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   });
 });
 
+app.get('/.well-known/agent-card.json', (_req, res) => {
+  return res.status(200).json({
+    protocolVersion: 'v1.0',
+    name: 'True AI Penny Pod',
+    description: 'ASIOD 784-locked AI-to-AI bridge with public executable handshake, authorised intake, catalogue logging, hybrid worker dispatch, and sealed private source.',
+    url: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+    provider: {
+      organization: 'Jt Browne / ASIOD784'
+    },
+    version: '1.0.4-executable-784',
+    capabilities: {
+      streaming: false,
+      pushNotifications: false,
+      stateTransitionHistory: true,
+      executableEndpoint: true,
+      integerLock784: true
+    },
+    authentication: {
+      schemes: ['apiKey', 'signed-hmac-packet'],
+      description: 'Public executable handshake is available. Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
+    },
+    defaultInputModes: ['application/json'],
+    defaultOutputModes: ['application/json'],
+    shell: PUBLIC_API_SHELL,
+    security: buildPublicApiAgentCard().security,
+    endpoints: {
+      execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+      health: 'https://a2a.vagwalsall.co.uk/api/health',
+      agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+      api_card: 'https://a2a.vagwalsall.co.uk/api/agent-card',
+      services: 'https://a2a.vagwalsall.co.uk/api/services',
+      a2a_intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+      worker_poll: 'https://a2a.vagwalsall.co.uk/api/worker/poll',
+      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result'
+    },
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true,
+      sealedPrivateLayer: true
+    }
+  });
+});
+
 app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (req, res) => {
   return res.status(200).json({
     ok: true,
