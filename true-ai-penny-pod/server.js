@@ -613,13 +613,17 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const verified = directBridgeVerify(req, rawBody);
 
   if (!verified.ok) {
-    return res.status(verified.status).json({
-      ok: false,
-      ...verified,
-      billable: false,
-      auditedOnly: true,
-      privateSourceExposed: false
-    });
+  return res.status(410).json({
+    ok: false,
+    gone: true,
+    blocked: true,
+    error: 'worker-poll-gone',
+    originalError: verified.error,
+    originalStatus: verified.status,
+    billable: false,
+    auditedOnly: true,
+    privateSourceExposed: false
+  });
   }
 
   const body = directBridgeParseBody(rawBody);
