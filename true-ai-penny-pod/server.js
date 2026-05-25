@@ -608,6 +608,30 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   });
 });
 
+app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (req, res) => {
+  return res.status(200).json({
+    ok: true,
+    agent: 'ASIOD-SIMULATOR',
+    status: 'executable-endpoint-live',
+    liveBaseUrl: APP_BASE_URL,
+    health: '/api/health',
+    agentCard: '/.well-known/agent-card.json',
+    a2aIntake: '/api/a2a/intake',
+    workerPoll: '/api/worker/poll',
+    workerResult: '/api/worker/result',
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true
+    },
+    privateSourceSealed: true
+  });
+});
+
 app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
   const verified = directBridgeVerify(req, rawBody);
