@@ -3179,6 +3179,56 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
   return res.status(200).json(buildA2AAgentCard());
 });
 
+app.get('/api/a2a/execute', (_req, res) => {
+  return res.status(200).json({
+    ok: true,
+    agent: 'ASIOD-SIMULATOR',
+    status: 'executable-endpoint-live',
+    liveBaseUrl: APP_BASE_URL,
+    method: 'GET-status-mirror',
+    health: '/api/health',
+    agentCard: '/.well-known/agent-card.json',
+    a2aIntake: '/api/a2a/intake',
+    workerPoll: '/api/worker/poll',
+    workerResult: '/api/worker/result',
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true
+    },
+    privateSourceSealed: true
+  });
+});
+
+app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (_req, res) => {
+  return res.status(200).json({
+    ok: true,
+    agent: 'ASIOD-SIMULATOR',
+    status: 'executable-endpoint-live',
+    liveBaseUrl: APP_BASE_URL,
+    method: 'POST-execute-status',
+    health: '/api/health',
+    agentCard: '/.well-known/agent-card.json',
+    a2aIntake: '/api/a2a/intake',
+    workerPoll: '/api/worker/poll',
+    workerResult: '/api/worker/result',
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true
+    },
+    privateSourceSealed: true
+  });
+});
+
 app.post('/api/quote', protectedJson(async (req, res, access) => {
   const quote = buildQuote({
     serviceId: req.body?.serviceId,
