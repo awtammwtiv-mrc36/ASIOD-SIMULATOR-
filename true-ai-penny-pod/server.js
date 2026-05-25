@@ -608,83 +608,6 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   });
 });
 
-app.get('/.well-known/agent-card.json', (_req, res) => {
-  return res.status(200).json({
-    protocolVersion: 'v1.0',
-    name: 'True AI Penny Pod',
-    description: 'ASIOD 784-locked AI-to-AI bridge with public executable handshake, authorised intake, catalogue logging, hybrid worker dispatch, and sealed private source.',
-    url: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
-    provider: {
-      organization: 'Jt Browne / ASIOD784'
-    },
-    version: '1.0.4-executable-784',
-    capabilities: {
-  execute_status: {
-    description: 'Check live ASIOD executable status, 784 lock status, and sealed private-source state.',
-    endpoint: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
-    method: 'POST',
-    input_schema: {
-      type: 'object',
-      properties: {},
-      required: []
-    }
-  }
-},
-authentication: {
-      schemes: ['apiKey', 'signed-hmac-packet'],
-      description: 'Public executable handshake is available. Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
-    },
-    defaultInputModes: ['application/json'],
-    defaultOutputModes: ['application/json'],
-    shell: PUBLIC_API_SHELL,
-    security: buildPublicApiAgentCard().security,
-    endpoints: {
-      execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
-      health: 'https://a2a.vagwalsall.co.uk/api/health',
-      agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
-      api_card: 'https://a2a.vagwalsall.co.uk/api/agent-card',
-      services: 'https://a2a.vagwalsall.co.uk/api/services',
-      a2a_intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
-      worker_poll: 'https://a2a.vagwalsall.co.uk/api/worker/poll',
-      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result'
-    },
-    asiod784: {
-      integerLock: 784,
-      lockStatus: 'active',
-      privateSourceExposed: false,
-      privateSourceSerialPublic: false,
-      decimalAuthority: false,
-      ieee754Governance: false,
-      exactIntegerFractionRootAuthority: true,
-      sealedPrivateLayer: true
-    }
-  });
-});
-
-app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (req, res) => {
-  return res.status(200).json({
-    ok: true,
-    agent: 'ASIOD-SIMULATOR',
-    status: 'executable-endpoint-live',
-    liveBaseUrl: APP_BASE_URL,
-    health: '/api/health',
-    agentCard: '/.well-known/agent-card.json',
-    a2aIntake: '/api/a2a/intake',
-    workerPoll: '/api/worker/poll',
-    workerResult: '/api/worker/result',
-    asiod784: {
-      integerLock: 784,
-      lockStatus: 'active',
-      privateSourceExposed: false,
-      privateSourceSerialPublic: false,
-      decimalAuthority: false,
-      ieee754Governance: false,
-      exactIntegerFractionRootAuthority: true
-    },
-    privateSourceSealed: true
-  });
-});
-
 app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
   const verified = directBridgeVerify(req, rawBody);
@@ -919,6 +842,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/api/order/create',
   '/api/brain/test',
   '/api/b2b/intake',
+  '/api/a2a/execute',
   '/api/a2a/intake',
   '/api/crypto/intake',
 
@@ -1596,7 +1520,7 @@ function buildPublicApiAgentCard() {
   return {
     ok: true,
     service: 'ASIOD Public API Shell',
-    version: '1.0.3-hybrid-intake-adverts',
+    version: '1.0.4-executable-784',
     api_base_url: 'https://a2a.vagwalsall.co.uk',
     shell: PUBLIC_API_SHELL,
     endpoints: {
@@ -1607,6 +1531,7 @@ function buildPublicApiAgentCard() {
       health: 'https://a2a.vagwalsall.co.uk/api/health',
       services: 'https://a2a.vagwalsall.co.uk/api/services',
 
+      execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
       agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
       true_ai_manifest: 'https://a2a.vagwalsall.co.uk/.well-known/true-ai.json',
       agent_manifest: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
@@ -1653,7 +1578,7 @@ function buildPublicApiAgentCard() {
       privateSourceSerialPublic: false
     },
     rules: [
-      'Public AI homepage, advert page, health, service discovery, and manifests are visible; human intake is fallback only; machine intake is protected.',
+      'Public AI homepage, advert page, health, service discovery, executable handshake, and manifests are visible; human intake is fallback only; machine intake is protected.',
       'AI-to-AI work must enter through /api/a2a/intake or Stripe-paid A2A job creation, not through a customer-selected worker form.',
       'Jobs default to target_worker = null so any live worker can claim them.',
       'Private source layer remains sealed and background-only.',
@@ -1663,6 +1588,60 @@ function buildPublicApiAgentCard() {
       'Hybrid bridge routes require signed HMAC packets from the local worker device when the hybrid bridge module is installed.',
       'Stripe webhook is public only for Stripe delivery and is signature-verified.'
     ]
+  };
+}
+
+function buildA2AAgentCard() {
+  return {
+    protocolVersion: 'v1.0',
+    name: 'True-ai-penny-pod',
+    description: 'ASIOD 784-locked AI-to-AI bridge with public executable handshake, authorised intake, catalogue logging, hybrid worker dispatch, and sealed private source.',
+    url: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+    provider: {
+      organization: 'Jt Browne / ASIOD784',
+      url: 'https://a2a.vagwalsall.co.uk'
+    },
+    version: '1.0.4-executable-784',
+    capabilities: {
+      execute_status: {
+        description: 'Check live ASIOD executable status, 784 lock status, and sealed private-source state.',
+        endpoint: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+        method: 'POST',
+        input_schema: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      }
+    },
+    authentication: {
+      schemes: ['apiKey', 'signed-hmac-packet'],
+      description: 'Public executable handshake is available. Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets.'
+    },
+    defaultInputModes: ['application/json'],
+    defaultOutputModes: ['application/json'],
+    shell: PUBLIC_API_SHELL,
+    security: buildPublicApiAgentCard().security,
+    endpoints: {
+      execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
+      health: 'https://a2a.vagwalsall.co.uk/api/health',
+      agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
+      api_card: 'https://a2a.vagwalsall.co.uk/api/agent-card',
+      services: 'https://a2a.vagwalsall.co.uk/api/services',
+      a2a_intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
+      worker_poll: 'https://a2a.vagwalsall.co.uk/api/worker/poll',
+      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result'
+    },
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true,
+      sealedPrivateLayer: true
+    }
   };
 }
 
@@ -1868,39 +1847,39 @@ function fastDropGate(req, res, next) {
   const blockedAgent = FAST_DROP_AGENTS.some((blocked) => agent.includes(blocked));
 
   const blockedAgentAllowedPaths = new Set([
-  
-  '/health',
-  '/api/health',
-  '/api/agent-card',
-  '/api/services',
+    '/health',
+    '/api/health',
+    '/api/agent-card',
+    '/api/services',
 
-  '/.well-known/agent-card.json',
-  '/.well-known/true-ai.json',
+    '/.well-known/agent-card.json',
+    '/.well-known/true-ai.json',
 
-  '/adverts',
-  '/ads',
-  '/advertise',
-  '/intake',
-  '/intake/a2a',
-  '/intake/b2b',
-  '/intake/crypto',
+    '/adverts',
+    '/ads',
+    '/advertise',
+    '/intake',
+    '/intake/a2a',
+    '/intake/b2b',
+    '/intake/crypto',
 
-  '/pay/a2a',
-  '/pay/weekly',
-  '/pay/monthly',
+    '/pay/a2a',
+    '/pay/weekly',
+    '/pay/monthly',
 
-  '/stripe/webhook',
+    '/stripe/webhook',
 
-  '/api/a2a/intake',
-  '/api/b2b/intake',
-  '/api/crypto/intake',
-  '/api/funnel/intake',
+    '/api/a2a/execute',
+    '/api/a2a/intake',
+    '/api/b2b/intake',
+    '/api/crypto/intake',
+    '/api/funnel/intake',
 
-  '/api/worker/heartbeat',
-  '/api/worker/poll',
-  '/api/worker/claim',
-  '/api/worker/result',
-  '/api/worker/stream'
+    '/api/worker/heartbeat',
+    '/api/worker/poll',
+    '/api/worker/claim',
+    '/api/worker/result',
+    '/api/worker/stream'
   ]);
 
   if (blockedAgent && !blockedAgentAllowedPaths.has(path)) {
@@ -3087,10 +3066,11 @@ app.get('/health', (_req, res) => {
   return res.status(200).json({
     ok: true,
     service: 'True AI Penny Pod',
-    version: '1.0.3-hybrid-intake-adverts',
+    version: '1.0.4-executable-784',
     status: 'live',
     publicPages: ['/', '/adverts', '/.well-known/agent-card.json'],
     humanFallback: '/intake',
+    executableHandshake: '/api/a2a/execute',
     machineIntake: '/api/a2a/intake',
     privateSourceExposed: false,
     privateSourceSerialPublic: false,
@@ -3104,7 +3084,7 @@ app.get('/api/health', (_req, res) => {
   return res.status(200).json({
     ok: true,
     service: 'ASIOD Public API Shell',
-    version: '1.0.3-hybrid-intake-adverts',
+    version: '1.0.4-executable-784',
     status: 'live',
     mode: 'two-string-public-ai-front-door',
     shell: PUBLIC_API_SHELL,
@@ -3114,6 +3094,30 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/agent-card', (_req, res) => {
   return res.status(200).json(buildPublicApiAgentCard());
+});
+
+app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (_req, res) => {
+  return res.status(200).json({
+    ok: true,
+    agent: 'ASIOD-SIMULATOR',
+    status: 'executable-endpoint-live',
+    liveBaseUrl: APP_BASE_URL,
+    health: '/api/health',
+    agentCard: '/.well-known/agent-card.json',
+    a2aIntake: '/api/a2a/intake',
+    workerPoll: '/api/worker/poll',
+    workerResult: '/api/worker/result',
+    asiod784: {
+      integerLock: 784,
+      lockStatus: 'active',
+      privateSourceExposed: false,
+      privateSourceSerialPublic: false,
+      decimalAuthority: false,
+      ieee754Governance: false,
+      exactIntegerFractionRootAuthority: true
+    },
+    privateSourceSealed: true
+  });
 });
 
 app.get('/api/services', (_req, res) => {
@@ -3131,6 +3135,7 @@ app.get('/api/services', (_req, res) => {
       humanFallback: 'https://a2a.vagwalsall.co.uk/intake'
     },
     machineRoutes: {
+      execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
       a2aIntake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
       workerStream: 'https://a2a.vagwalsall.co.uk/api/worker/stream'
     },
@@ -3158,8 +3163,8 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
   const card = buildPublicApiAgentCard();
 
   return res.status(200).json({
-    service: 'True AI Penny Pod',
-    version: '1.0.3-hybrid-intake-adverts',
+    service: 'True-ai-penny-pod',
+    version: '1.0.4-executable-784',
     type: 'public_discovery_manifest',
     status: 'active',
     api_base_url: 'https://a2a.vagwalsall.co.uk',
@@ -3171,30 +3176,7 @@ app.get('/.well-known/true-ai.json', (_req, res) => {
 });
 
 app.get('/.well-known/agent-card.json', (_req, res) => {
-  return res.status(200).json({
-    protocolVersion: 'v1.0',
-    name: 'True AI Penny Pod',
-    description: 'Private AI-to-AI bridge for exact internal unit accounting, catalogue logging, source checking, response cleaning, paid order creation, Stripe checkout routing, hybrid worker dispatch, and authorised shattered-file recovery intake.',
-    url: 'https://a2a.vagwalsall.co.uk/',
-    provider: {
-      organization: 'Jt Browne / ASIOD784'
-    },
-    version: '1.0.3-hybrid-intake-adverts',
-    capabilities: {
-      streaming: true,
-      pushNotifications: false,
-      stateTransitionHistory: true
-    },
-    authentication: {
-      schemes: ['apiKey', 'signed-hmac-packet'],
-      description: 'Protected routes require client-api-key or business-api-key. Hybrid bridge routes require HMAC signed packets when the hybrid bridge module is installed.'
-    },
-    defaultInputModes: ['application/json'],
-    defaultOutputModes: ['application/json'],
-    shell: PUBLIC_API_SHELL,
-    security: buildPublicApiAgentCard().security,
-    endpoints: buildPublicApiAgentCard().endpoints
-  });
+  return res.status(200).json(buildA2AAgentCard());
 });
 
 app.post('/api/quote', protectedJson(async (req, res, access) => {
