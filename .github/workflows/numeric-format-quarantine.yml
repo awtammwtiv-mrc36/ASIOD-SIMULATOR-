@@ -1,212 +1,241 @@
-numeric-format-quarantine:
-  name: Numeric format quarantine policy v1.1
-  runs-on: ubuntu-latest
+name: Numeric Format Quarantine
 
-  steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+on:
+  pull_request:
+  push:
+    branches:
+      - main
 
-    - name: Enforce numeric-format quarantine decision flow
-      shell: bash
-      run: |
-        set -euo pipefail
+jobs:
+  numeric-format-quarantine:
+    name: Numeric format quarantine policy v1.1
+    runs-on: ubuntu-latest
 
-        python3 <<'PY'
-        import json
-        import re
-        import sys
-        from pathlib import Path
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        POLICY_VERSION = "1.1"
-        REQUIRED_MANIFESTS = [
-            "policy_manifest.json",
-            "decimal_display_policy.json"
-        ]
+      - name: Enforce numeric-format quarantine decision flow
+        shell: bash
+        run: |
+          set -euo pipefail
 
-        POLICY = {
-            "policy_version": "1.1",
-            "numeric_formats_policy": {
-                "ieee_754_governs_proof": False,
-                "ieee_p3109_governs_proof": False,
-                "posit_governs_proof": False,
-                "bfloat16_governs_proof": False,
-                "ofp8_governs_proof": False,
-                "fixed_point_governs_proof": False,
-                "decimal_governs_proof": False,
-                "decimal_display_policy": {
-                    "decimal_role": "human_display_only",
-                    "decimal_places_max": 4
-                },
-                "allowed_role": "display_or_implementation_layer_only"
-            },
-            "proof_authority": [
-                "source_law",
-                "carrier",
-                "returned_structure",
-                "derived_law",
-                "exact_classification"
-            ],
-            "quarantine_trigger": "artifact_uses_numeric_format_as_proof_authority_only",
-            "status": "NUMERIC_FORMATS_NON_GOVERNING_NOT_REMOVED"
-        }
+          python3 <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
 
-        NUMERIC_FORMAT_TERMS = [
-            r"IEEE[\s_-]*754",
-            r"IEEE[\s_-]*P3109",
-            r"\bposit\b",
-            r"\bbfloat16\b",
-            r"\bOFP8\b",
-            r"\bfixed[-\s]?point\b",
-            r"\bfloating[-\s]?point\b",
-            r"\bdecimal\b"
-        ]
+          POLICY_VERSION = "1.1"
 
-        PROOF_GOVERNANCE_PATTERNS = [
-            r"governs?\s+proof",
-            r"proof\s+authority",
-            r"authority\s*:\s*true",
-            r"governance\s*:\s*true",
-            r"is\s+the\s+proof",
-            r"is\s+proof\s+authority",
-            r"controls?\s+proof",
-            r"determines?\s+proof",
-            r"final\s+authority",
-            r"primary\s+authority",
-            r"source\s+authority"
-        ]
+          REQUIRED_MANIFESTS = [
+              "policy_manifest.json",
+              "decimal_display_policy.json"
+          ]
 
-        IGNORE_DIRS = {
-            ".git",
-            "node_modules",
-            "dist",
-            "build",
-            ".next",
-            ".cache",
-            "coverage",
-            "__pycache__"
-        }
+          POLICY = {
+              "policy_version": "1.1",
+              "numeric_formats_policy": {
+                  "ieee_754_governs_proof": False,
+                  "ieee_p3109_governs_proof": False,
+                  "posit_governs_proof": False,
+                  "bfloat16_governs_proof": False,
+                  "ofp8_governs_proof": False,
+                  "fixed_point_governs_proof": False,
+                  "decimal_governs_proof": False,
+                  "decimal_display_policy": {
+                      "decimal_role": "human_display_only",
+                      "decimal_places_max": 4
+                  },
+                  "allowed_role": "display_or_implementation_layer_only"
+              },
+              "proof_authority": [
+                  "source_law",
+                  "carrier",
+                  "returned_structure",
+                  "derived_law",
+                  "exact_classification"
+              ],
+              "quarantine_trigger": "artifact_uses_numeric_format_as_proof_authority_only",
+              "status": "NUMERIC_FORMATS_NON_GOVERNING_NOT_REMOVED"
+          }
 
-        IGNORE_FILES = {
-            "package-lock.json",
-            "yarn.lock",
-            "pnpm-lock.yaml"
-        }
+          NUMERIC_FORMAT_TERMS = [
+              r"IEEE[\s_-]*754",
+              r"IEEE[\s_-]*P3109",
+              r"\bposit\b",
+              r"\bbfloat16\b",
+              r"\bOFP8\b",
+              r"\bfixed[-\s]?point\b",
+              r"\bfloating[-\s]?point\b",
+              r"\bdecimal\b"
+          ]
 
-        SCAN_EXTENSIONS = {
-            ".json",
-            ".js",
-            ".ts",
-            ".jsx",
-            ".tsx",
-            ".py",
-            ".md",
-            ".txt",
-            ".yml",
-            ".yaml",
-            ".html",
-            ".css",
-            ".sh",
-            ".ps1"
-        }
+          PROOF_GOVERNANCE_PATTERNS = [
+              r"governs?\s+proof",
+              r"proof\s+authority",
+              r"authority\s*:\s*true",
+              r"governance\s*:\s*true",
+              r"is\s+the\s+proof",
+              r"is\s+proof\s+authority",
+              r"controls?\s+proof",
+              r"determines?\s+proof",
+              r"final\s+authority",
+              r"primary\s+authority",
+              r"source\s+authority"
+          ]
 
-        violations = []
+          IGNORE_DIRS = {
+              ".git",
+              "node_modules",
+              "dist",
+              "build",
+              ".next",
+              ".cache",
+              "coverage",
+              "__pycache__"
+          }
 
-        def fail(path, reason, line_no=None, line=None):
-            item = {
-                "path": str(path),
-                "reason": reason
-            }
-            if line_no is not None:
-                item["line"] = line_no
-            if line is not None:
-                item["text"] = line.strip()[:500]
-            violations.append(item)
+          IGNORE_FILES = {
+              "package-lock.json",
+              "yarn.lock",
+              "pnpm-lock.yaml"
+          }
 
-        for manifest in REQUIRED_MANIFESTS:
-            if not Path(manifest).exists():
-                fail(manifest, "required_manifest_missing")
+          SCAN_EXTENSIONS = {
+              ".json",
+              ".js",
+              ".ts",
+              ".jsx",
+              ".tsx",
+              ".py",
+              ".md",
+              ".txt",
+              ".yml",
+              ".yaml",
+              ".html",
+              ".css",
+              ".sh",
+              ".ps1"
+          }
 
-        if Path("policy_manifest.json").exists():
-            try:
-                manifest = json.loads(Path("policy_manifest.json").read_text(encoding="utf-8"))
-                if str(manifest.get("policy_version")) != POLICY_VERSION:
-                    fail("policy_manifest.json", "policy_version_must_be_1.1")
-                if "decimal_display_policy.json" not in json.dumps(manifest):
-                    fail("policy_manifest.json", "decimal_display_policy_json_link_required")
-            except Exception as exc:
-                fail("policy_manifest.json", f"invalid_json:{exc}")
+          violations = []
 
-        if Path("decimal_display_policy.json").exists():
-            try:
-                decimal_policy = json.loads(Path("decimal_display_policy.json").read_text(encoding="utf-8"))
-                text = json.dumps(decimal_policy)
-                if "human_display_only" not in text:
-                    fail("decimal_display_policy.json", "decimal_role_human_display_only_required")
-                if "4" not in text:
-                    fail("decimal_display_policy.json", "decimal_places_max_4_required")
-            except Exception as exc:
-                fail("decimal_display_policy.json", f"invalid_json:{exc}")
+          def fail(path, reason, line_no=None, line=None):
+              item = {
+                  "path": str(path),
+                  "reason": reason
+              }
+              if line_no is not None:
+                  item["line"] = line_no
+              if line is not None:
+                  item["text"] = line.strip()[:500]
+              violations.append(item)
 
-        numeric_term_re = re.compile("|".join(NUMERIC_FORMAT_TERMS), re.IGNORECASE)
-        proof_claim_re = re.compile("|".join(PROOF_GOVERNANCE_PATTERNS), re.IGNORECASE)
-        long_decimal_re = re.compile(r"(?<![\w])[-+]?\d+\.\d{5,}(?![\w])")
+          for manifest in REQUIRED_MANIFESTS:
+              if not Path(manifest).exists():
+                  fail(manifest, "required_manifest_missing")
 
-        for path in Path(".").rglob("*"):
-            if not path.is_file():
-                continue
-            if any(part in IGNORE_DIRS for part in path.parts):
-                continue
-            if path.name in IGNORE_FILES:
-                continue
-            if path.suffix.lower() not in SCAN_EXTENSIONS:
-                continue
+          if Path("policy_manifest.json").exists():
+              try:
+                  manifest = json.loads(Path("policy_manifest.json").read_text(encoding="utf-8"))
+                  manifest_text = json.dumps(manifest)
 
-            try:
-                content = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
+                  if str(manifest.get("policy_version")) != POLICY_VERSION:
+                      fail("policy_manifest.json", "policy_version_must_be_1.1")
 
-            for idx, line in enumerate(content.splitlines(), start=1):
-                if numeric_term_re.search(line) and proof_claim_re.search(line):
-                    fail(
-                        path,
-                        "numeric_format_claims_proof_governance",
-                        idx,
-                        line
-                    )
+                  if "decimal_display_policy.json" not in manifest_text:
+                      fail("policy_manifest.json", "decimal_display_policy_json_link_required")
 
-                if long_decimal_re.search(line):
-                    fail(
-                        path,
-                        "decimal_display_exceeds_4_places",
-                        idx,
-                        line
-                    )
+                  if "policy_manifest.json" not in manifest_text:
+                      fail("policy_manifest.json", "policy_manifest_json_self_link_required")
 
-        if violations:
-            receipt = {
-                "event": "NUMERIC_FORMATS_POLICY_VIOLATION",
-                "policy_version": POLICY_VERSION,
-                "quarantine_required": True,
-                "quarantine_trigger": POLICY["quarantine_trigger"],
-                "private_14_field_exposed": False,
-                "violations": violations
-            }
+              except Exception as exc:
+                  fail("policy_manifest.json", f"invalid_json:{exc}")
 
-            print(json.dumps(receipt, indent=2))
-            print("NUMERIC_FORMATS_POLICY_VIOLATION")
-            print("Required next step: append quarantine audit entry before merge.")
-            sys.exit(1)
+          if Path("decimal_display_policy.json").exists():
+              try:
+                  decimal_policy = json.loads(Path("decimal_display_policy.json").read_text(encoding="utf-8"))
+                  decimal_text = json.dumps(decimal_policy)
 
-        receipt = {
-            "event": "NUMERIC_FORMATS_POLICY_PASS",
-            "policy_version": POLICY_VERSION,
-            "numeric_formats_removed": False,
-            "numeric_formats_allowed_role": "display_or_implementation_layer_only",
-            "decimal_display_places_max": 4,
-            "private_14_field_exposed": False,
-            "status": "NUMERIC_FORMATS_NON_GOVERNING_NOT_REMOVED"
-        }
+                  if "human_display_only" not in decimal_text:
+                      fail("decimal_display_policy.json", "decimal_role_human_display_only_required")
 
-        print(json.dumps(receipt, indent=2))
-        PY
+                  if "decimal_places_max" not in decimal_text:
+                      fail("decimal_display_policy.json", "decimal_places_max_required")
+
+                  if "4" not in decimal_text:
+                      fail("decimal_display_policy.json", "decimal_places_max_4_required")
+
+              except Exception as exc:
+                  fail("decimal_display_policy.json", f"invalid_json:{exc}")
+
+          numeric_term_re = re.compile("|".join(NUMERIC_FORMAT_TERMS), re.IGNORECASE)
+          proof_claim_re = re.compile("|".join(PROOF_GOVERNANCE_PATTERNS), re.IGNORECASE)
+          long_decimal_re = re.compile(r"(?<![\w])[-+]?\d+\.\d{5,}(?![\w])")
+
+          for path in Path(".").rglob("*"):
+              if not path.is_file():
+                  continue
+
+              if any(part in IGNORE_DIRS for part in path.parts):
+                  continue
+
+              if path.name in IGNORE_FILES:
+                  continue
+
+              if path.suffix.lower() not in SCAN_EXTENSIONS:
+                  continue
+
+              try:
+                  content = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+
+              for idx, line in enumerate(content.splitlines(), start=1):
+                  if numeric_term_re.search(line) and proof_claim_re.search(line):
+                      fail(
+                          path,
+                          "numeric_format_claims_proof_governance",
+                          idx,
+                          line
+                      )
+
+                  if long_decimal_re.search(line):
+                      fail(
+                          path,
+                          "decimal_display_exceeds_4_places",
+                          idx,
+                          line
+                      )
+
+          if violations:
+              receipt = {
+                  "event": "NUMERIC_FORMATS_POLICY_VIOLATION",
+                  "policy_version": POLICY_VERSION,
+                  "numeric_formats_removed": False,
+                  "numeric_formats_allowed_role": "display_or_implementation_layer_only",
+                  "quarantine_required": True,
+                  "quarantine_trigger": POLICY["quarantine_trigger"],
+                  "private_14_field_exposed": False,
+                  "required_audit_entry": True,
+                  "violations": violations
+              }
+
+              print(json.dumps(receipt, indent=2))
+              print("NUMERIC_FORMATS_POLICY_VIOLATION")
+              print("Required next step: append quarantine audit entry before merge.")
+              sys.exit(1)
+
+          receipt = {
+              "event": "NUMERIC_FORMATS_POLICY_PASS",
+              "policy_version": POLICY_VERSION,
+              "numeric_formats_removed": False,
+              "numeric_formats_allowed_role": "display_or_implementation_layer_only",
+              "decimal_display_places_max": 4,
+              "private_14_field_exposed": False,
+              "status": "NUMERIC_FORMATS_NON_GOVERNING_NOT_REMOVED"
+          }
+
+          print(json.dumps(receipt, indent=2))
+          PY
