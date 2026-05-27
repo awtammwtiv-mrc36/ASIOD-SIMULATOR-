@@ -1123,8 +1123,8 @@ function constantTimeEquals(a, b) {
 }
 
 function requireShellKey(req) {
-  const suppliedClientKey = req.get('client-api-key') || '';
-  const suppliedBusinessKey = req.get('business-api-key') || '';
+const suppliedClientKey = req.get('client-api-key') || req.get('x-client-api-key') || req.query.client_api_key || req.query.a2a_key || '';
+const suppliedBusinessKey = req.get('business-api-key') || req.get('x-business-api-key') || req.query.business_api_key || '';
 
   const clientKeyValid = Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, CLIENT_API_KEY);
   const businessKeyValid = Boolean(BUSINESS_API_KEY) && constantTimeEquals(suppliedBusinessKey, BUSINESS_API_KEY);
@@ -1149,6 +1149,116 @@ function sendUnauthorized(res) {
     error: 'client-or-business-key-required'
   });
 }
+
+const A2A_JOBS = new Map();
+
+app.get('/a2a/handshake', (req, res) => {
+  const shell = requireShellKey(req);
+
+  if (!shell.ok) {
+    return sendUnauthorized(res);
+  }
+
+  return res.json({
+    ok: true,
+    service: 'VAGWalsall A2A',
+    a2a: true,
+    access: shell.access,
+    weeklyDIY: true,
+    monthly: true,
+    acceptsJobs: true,
+    workerRequired: true,
+    publicShellOnly: true,
+    privateSourceExposed: false,
+    endpoints: {
+      handshake: '/a2a/handshake',
+      services: '/a2a/services',
+      createJob: '/a2a/job',
+      readJob: '/a2a/job/:jobId'
+    }
+  });
+});
+
+app.get('/a2a/services', (req, res) => {
+  const shell = requireShellKey(req);
+
+  if (!shell.ok) {
+    return sendUnauthorized(res);
+  }
+
+  return res.json({
+    ok: true,
+    access: shell.access,
+    services: [
+      {
+        serviceId: 'weekly-diy',
+        name: 'Weekly Do It Yourself',
+        status: 'available',
+        a2aEnabled: true,
+        workerRequired: true
+      },
+      {
+        serviceId: 'monthly',
+        name: 'Monthly',
+        status: 'stripe-not-fully-connected',
+        a2aEnabled: true,
+        workerRequired: true
+      }
+    ]
+  });
+});
+
+app.post('/a2a/job', express.json({ limit: '2mb' }), (req, res) => {
+  const shell = requireShellKey(req);
+
+  if (!shell.ok) {
+    return sendUnauthorized(res);
+  }
+
+  const jobId = `a2a_job_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+  const job = {
+    jobId,
+    status: 'created',
+    access: shell.access,
+    createdAt: new Date().toISOString(),
+    serviceId: req.body?.serviceId || 'weekly-diy',
+    instruction: req.body?.instruction || 'A2A test connection',
+    payload: req.body?.payload || {},
+    result: null
+  };
+
+  A2A_JOBS.set(jobId, job);
+
+  return res.json({
+    ok: true,
+    jobId,
+    status: job.status,
+    readUrl: `/a2a/job/${jobId}`
+  });
+});
+
+app.get('/a2a/job/:jobId', (req, res) => {
+  const shell = requireShellKey(req);
+
+  if (!shell.ok) {
+    return sendUnauthorized(res);
+  }
+
+  const job = A2A_JOBS.get(req.params.jobId);
+
+  if (!job) {
+    return res.status(404).json({
+      ok: false,
+      error: 'a2a_job_not_found'
+    });
+  }
+
+  return res.json({
+    ok: true,
+    job
+  });
+});
 
 function sanitizePublicPayload(payload = {}) {
   return {
