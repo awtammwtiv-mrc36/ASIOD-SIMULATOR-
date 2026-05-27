@@ -1124,35 +1124,54 @@ function constantTimeEquals(a, b) {
 }
 
 function requireShellKey(req) {
-const suppliedClientKey = req.get('client-api-key') || req.get('x-client-api-key') || req.query.client_api_key || req.query.a2a_key || '';
-const suppliedBusinessKey = req.get('business-api-key') || req.get('x-business-api-key') || req.query.business_api_key || '';
+  const suppliedClientKey = String(
+    req.get('client-api-key') ||
+    req.get('x-client-api-key') ||
+    req.query.client_api_key ||
+    req.query.a2a_key ||
+    req.query.api_key ||
+    ''
+  ).trim().toLowerCase();
+
+  const suppliedBusinessKey = String(
+    req.get('business-api-key') ||
+    req.get('x-business-api-key') ||
+    req.query.business_api_key ||
+    ''
+  ).trim().toLowerCase();
 
   const clientKeyValid =
-  (Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, CLIENT_API_KEY)) ||
-  (Boolean(A2A_KEY) && constantTimeEquals(suppliedClientKey, A2A_KEY));
-  const businessKeyValid = Boolean(BUSINESS_API_KEY) && constantTimeEquals(suppliedBusinessKey, BUSINESS_API_KEY);
+    (Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, String(CLIENT_API_KEY).trim().toLowerCase())) ||
+    (Boolean(A2A_KEY) && constantTimeEquals(suppliedClientKey, String(A2A_KEY).trim().toLowerCase()));
+
+  const businessKeyValid =
+    Boolean(BUSINESS_API_KEY) &&
+    constantTimeEquals(suppliedBusinessKey, String(BUSINESS_API_KEY).trim().toLowerCase());
 
   if (!clientKeyValid && !businessKeyValid) {
     return {
       ok: false,
       status: 401,
-      error: 'client-or-business-key-required'
+      error: 'api-key-required'
     };
   }
 
   return {
     ok: true,
-    access: clientKeyValid ? 'client' : 'business'
+    access: businessKeyValid
+      ? 'business'
+      : Boolean(A2A_KEY) && constantTimeEquals(suppliedClientKey, String(A2A_KEY).trim().toLowerCase())
+        ? 'a2a'
+        : 'client'
   };
 }
 
 function sendUnauthorized(res) {
   return res.status(401).json({
     ok: false,
-    error: 'client-or-business-key-required'
+    error: 'api-key-required'
   });
-}
-
+  }
 const A2A_JOBS = new Map();
 
 app.get('/a2a/handshake', (req, res) => {
