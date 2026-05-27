@@ -3,7 +3,12 @@ import express from 'express';
 import Stripe from 'stripe';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 let HYBRID_ENGINE_WORKER_BRIDGE = Object.freeze({
   bridgeSerial: 'HYBRID-ENGINE-WORKER-BRIDGE-FALLBACK',
   status: 'fallback-active',
@@ -830,7 +835,12 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/favicon.ico',
   '/favicon.png',
 
-  '/api/health',
+ '/api/health',
+
+  '/a2a/handshake',
+  '/a2a/environment',
+  '/a2a/services',
+
   '/api/bridge/health',
   '/api/agent-card',
   '/api/services',
@@ -873,7 +883,8 @@ const ALLOWED_EXACT_PATHS = new Set([
 
 const ALLOWED_DYNAMIC_PREFIXES = [
   '/api/order/',
-  '/api/receipt/'
+  '/api/receipt/',
+  '/a2a/job/'
 ];
 
 const SHELL_REGISTRY = Object.freeze({
@@ -1984,9 +1995,13 @@ function fastDropGate(req, res, next) {
 
   const blockedAgentAllowedPaths = new Set([
     '/health',
-    '/api/health',
-    '/api/agent-card',
+'/api/agent-card',
     '/api/services',
+
+    '/a2a/handshake',
+    '/a2a/environment',
+    '/a2a/services',
+    '/a2a/job',
 
     '/.well-known/agent-card.json',
     '/.well-known/true-ai.json',
