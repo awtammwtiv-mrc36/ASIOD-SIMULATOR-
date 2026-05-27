@@ -708,6 +708,7 @@ const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
 const DATABASE_URL = process.env.DATABASE_URL;
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 const BUSINESS_API_KEY = process.env.BUSINESS_API_KEY;
+const A2A_KEY = process.env.A2A_KEY;
 
 const RATE_LIMIT_WINDOW_MS = Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10);
 const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
