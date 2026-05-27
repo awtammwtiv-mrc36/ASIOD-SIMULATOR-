@@ -1126,7 +1126,9 @@ function requireShellKey(req) {
 const suppliedClientKey = req.get('client-api-key') || req.get('x-client-api-key') || req.query.client_api_key || req.query.a2a_key || '';
 const suppliedBusinessKey = req.get('business-api-key') || req.get('x-business-api-key') || req.query.business_api_key || '';
 
-  const clientKeyValid = Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, CLIENT_API_KEY);
+  const clientKeyValid =
+  (Boolean(CLIENT_API_KEY) && constantTimeEquals(suppliedClientKey, CLIENT_API_KEY)) ||
+  (Boolean(A2A_KEY) && constantTimeEquals(suppliedClientKey, A2A_KEY));
   const businessKeyValid = Boolean(BUSINESS_API_KEY) && constantTimeEquals(suppliedBusinessKey, BUSINESS_API_KEY);
 
   if (!clientKeyValid && !businessKeyValid) {
