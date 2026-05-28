@@ -42,7 +42,7 @@ export const BRAIN_SIMULATOR_BRIDGE = Object.freeze({
   status: 'active'
 });
 
-const DEFAULT_FUNNEL_MAX_AGE_MS = 300000;
+const DEFAULT_FUNNEL_MAX_AGE_MS = 3000000;
 const DEFAULT_FUNNEL_BODY_LIMIT = '64kb';
 
 function getFunnelSecret() {
