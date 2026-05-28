@@ -743,6 +743,9 @@ const ADS_TXT = process.env.ADS_TXT || '';
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+const LOCAL_CATALOGUE_PATH =
+  process.env.LOCAL_CATALOGUE_PATH ||
+  path.join(process.cwd(), 'catalogue-local.jsonl');
 
 const localReceipts = new Map();
 const localQuotes = new Map();
@@ -2221,23 +2224,45 @@ async function writeCatalogueRecord({
   body = {},
   units = 0
 }) {
-  if (!pool) return false;
+  const record = {
+    id,
+    work_id: workId,
+    agent_id: agentId,
+    record_type: recordType,
+    title,
+    body,
+    units: Number(units),
+    created_at: new Date().toISOString(),
+    storage: pool ? 'database' : 'local-catalogue-file',
+    privateSourceExposed: false
+  };
 
-  await pool.query(
-    `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (id) do update
-     set work_id = excluded.work_id,
-         agent_id = excluded.agent_id,
-         record_type = excluded.record_type,
-         title = excluded.title,
-         body = excluded.body,
-         units = excluded.units`,
-    [id, workId, agentId, recordType, title, body, Number(units)]
+  if (pool) {
+    await pool.query(
+      `insert into catalogue_records (id, work_id, agent_id, record_type, title, body, units)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (id) do update
+       set work_id = excluded.work_id,
+           agent_id = excluded.agent_id,
+           record_type = excluded.record_type,
+           title = excluded.title,
+           body = excluded.body,
+           units = excluded.units`,
+      [id, workId, agentId, recordType, title, body, Number(units)]
+    );
+
+    return true;
+  }
+
+  await fs.mkdir(path.dirname(LOCAL_CATALOGUE_PATH), { recursive: true });
+  await fs.appendFile(
+    LOCAL_CATALOGUE_PATH,
+    `${JSON.stringify(record)}\n`,
+    'utf8'
   );
 
   return true;
-}
+        }
 
 async function queueAnyLiveWorkerJob({
   channel = 'a2a',
@@ -3863,33 +3888,52 @@ app.post('/pod/catalogue/write', protectedJson(async (req, res) => {
 
   return res.status(200).json({
     stored: true,
+    storage: pool ? 'database' : 'local-catalogue-file',
     catalogueId: id,
     message: 'Catalogue record stored.'
   });
-}));
 
 app.get('/pod/catalogue/recent', protectedNoBody(async (_req, res) => {
-  if (!pool) {
-    return res.status(503).json({
-      ok: false,
-      error: 'DATABASE_URL is not attached'
+  if (pool) {
+    const result = await pool.query(
+      `select id, work_id, agent_id, record_type, title, body, units, created_at
+       from catalogue_records
+       order by created_at desc
+       limit 25`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      storage: 'database',
+      count: result.rows.length,
+      records: result.rows
     });
   }
 
-  const result = await pool.query(
-    `select id, work_id, agent_id, record_type, title, body, units, created_at
-     from catalogue_records
-     order by created_at desc
-     limit 25`
-  );
+  let records = [];
+
+  try {
+    const text = await fs.readFile(LOCAL_CATALOGUE_PATH, 'utf8');
+    records = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .reverse()
+      .slice(0, 25);
+  } catch {
+    records = [];
+  }
 
   return res.status(200).json({
     ok: true,
-    count: result.rows.length,
-    records: result.rows
+    storage: 'local-catalogue-file',
+    databaseDisabled: true,
+    count: records.length,
+    records
   });
 }));
-
+  
 app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
   const {
     sourceName = null,
