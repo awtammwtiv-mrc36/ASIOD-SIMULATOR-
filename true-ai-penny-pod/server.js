@@ -729,7 +729,7 @@ const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY || '';
 const ADS_TXT = process.env.ADS_TXT || '';
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
+const pool = null;
 const LOCAL_CATALOGUE_PATH =
   process.env.LOCAL_CATALOGUE_PATH ||
   path.join(process.cwd(), 'catalogue-local.jsonl');
