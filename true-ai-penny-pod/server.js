@@ -2259,7 +2259,7 @@ async function writeCatalogueRecord({
     `${JSON.stringify(record)}\n`,
     'utf8'
   );
-}));
+
 
   return true;
         }
