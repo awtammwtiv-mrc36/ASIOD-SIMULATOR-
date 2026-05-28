@@ -1911,6 +1911,7 @@ function isStripeWebhookPath(req) {
 }
 
 function hostGate(req, res, next) {
+function hostGate(req, res, next) {
   const host = normaliseHost(req.get('host'));
   const path = cleanRequestPath(req.path || '/');
 
@@ -1922,12 +1923,15 @@ function hostGate(req, res, next) {
     return next();
   }
 
-  if (BLOCK_RENDER_DEFAULT_HOST && host === RENDER_DEFAULT_HOST) {
+  if (host === RENDER_DEFAULT_HOST) {
     if (
-      path === '/.well-known/agent-card.json' ||
-      path === '/.well-known/true-ai.json' ||
+      path === '/' ||
       path === '/health' ||
       path === '/api/health' ||
+      path === '/.well-known/agent-card.json' ||
+      path === '/.well-known/true-ai.json' ||
+      path === '/geometry' ||
+      path === '/geometry/health' ||
       path === '/stripe/webhook'
     ) {
       return next();
