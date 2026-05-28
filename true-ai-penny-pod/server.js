@@ -697,6 +697,7 @@ const BLOCK_RENDER_DEFAULT_HOST = process.env.BLOCK_RENDER_DEFAULT_HOST !== 'fal
 
 const APP_BASE_URL =
   process.env.APP_BASE_URL ||
+  'https://asiod-true-ai-penny-pod.onrender.com'
   process.env.APP_INTERNAL_BASE_URL ||
   'https://a2a.vagwalsall.co.uk';
 
@@ -835,8 +836,8 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/favicon.ico',
   '/favicon.png',
 
- '/api/health',
-
+  '/api/health',
+  
   '/a2a/handshake',
   '/a2a/environment',
   '/a2a/services',
@@ -846,7 +847,10 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/api/services',
   '/.well-known/true-ai.json',
   '/.well-known/agent-card.json',
-
+  
+ '/geometry',
+  '/geometry/health',
+  
   '/stripe/webhook',
 
   '/pay/a2a',
