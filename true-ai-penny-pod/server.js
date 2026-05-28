@@ -3930,13 +3930,6 @@ app.post('/pod/shattered-file/receive', protectedJson(async (req, res) => {
     repairedBody = null
   } = req.body || {};
 
-  if (!pool) {
-    return res.status(503).json({
-      ok: false,
-      error: 'database-not-configured'
-    });
-  }
-
   const id = `file_${uuidv4()}`;
   const status = repairedBody ? 'repaired' : 'received';
 
