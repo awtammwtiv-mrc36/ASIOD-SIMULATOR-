@@ -697,9 +697,8 @@ const BLOCK_RENDER_DEFAULT_HOST = process.env.BLOCK_RENDER_DEFAULT_HOST !== 'fal
 
 const APP_BASE_URL =
   process.env.APP_BASE_URL ||
-  'https://asiod-true-ai-penny-pod.onrender.com'
   process.env.APP_INTERNAL_BASE_URL ||
-  'https://a2a.vagwalsall.co.uk';
+  `https://${CANONICAL_HOST}`;
 
 const EXTRA_ALLOWED_HOSTS = new Set(
   String(process.env.EXTRA_ALLOWED_HOSTS || '')
@@ -2260,6 +2259,7 @@ async function writeCatalogueRecord({
     `${JSON.stringify(record)}\n`,
     'utf8'
   );
+}));
 
   return true;
         }
