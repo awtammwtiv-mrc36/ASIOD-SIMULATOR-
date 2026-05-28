@@ -711,7 +711,20 @@ const EXTRA_ALLOWED_HOSTS = new Set(
 const UNIT_VALUE_GBP = process.env.UNIT_VALUE_GBP || '0.001';
 const MIN_CHARGE_GBP = process.env.MIN_CHARGE_GBP || '15.00';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const RAW_DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+
+const DATABASE_URL =
+  RAW_DATABASE_URL &&
+  !RAW_DATABASE_URL.includes('dpg-') &&
+  !RAW_DATABASE_URL.includes('render.com') &&
+  !RAW_DATABASE_URL.includes('onrender.com')
+    ? RAW_DATABASE_URL
+    : '';
+
+if (RAW_DATABASE_URL && !DATABASE_URL) {
+  console.warn('DATABASE_URL rejected: Render/Postgres host disabled by policy.');
+}
+
 const CLIENT_API_KEY = process.env.CLIENT_API_KEY;
 const BUSINESS_API_KEY = process.env.BUSINESS_API_KEY;
 const A2A_KEY = process.env.A2A_KEY;
