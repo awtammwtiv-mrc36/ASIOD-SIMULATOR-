@@ -1911,7 +1911,6 @@ function isStripeWebhookPath(req) {
 }
 
 function hostGate(req, res, next) {
-function hostGate(req, res, next) {
   const host = normaliseHost(req.get('host'));
   const path = cleanRequestPath(req.path || '/');
 
