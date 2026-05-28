@@ -3917,7 +3917,7 @@ app.get('/pod/catalogue/recent', protectedNoBody(async (_req, res) => {
   return res.status(200).json({
     ok: true,
     storage: 'local-catalogue-file',
-    databaseDisabled: true,
+    databaseDisabled: false,
     count: records.length,
     records
   });
