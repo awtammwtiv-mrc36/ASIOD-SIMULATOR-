@@ -3947,11 +3947,15 @@ app.use((error, req, res, _next) => {
 });
 
 initDb()
-  .then(() => {
+  .catch((error) => {
+    console.error('Catalogue database disabled after init failure:', error.message || error);
+  })
+  .finally(() => {
     app.listen(PORT, () => {
       console.log(`True AI Penny Pod running on ${APP_BASE_URL}`);
     });
-  })
+  });
+
   .catch((error) => {
     console.error('Startup failed', error);
     process.exit(1);
