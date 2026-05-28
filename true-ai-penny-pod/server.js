@@ -3891,7 +3891,8 @@ app.post('/pod/catalogue/write', protectedJson(async (req, res) => {
     storage: pool ? 'database' : 'local-catalogue-file',
     catalogueId: id,
     message: 'Catalogue record stored.'
-  });
+});
+}));
 
 app.get('/pod/catalogue/recent', protectedNoBody(async (_req, res) => {
   if (pool) {
