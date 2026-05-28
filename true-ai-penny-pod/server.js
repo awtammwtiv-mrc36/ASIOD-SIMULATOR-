@@ -3330,6 +3330,65 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
   return res.status(200).json(buildA2AAgentCard());
 });
 
+const GEOMETRY_PRIVATE_URL =
+  process.env.GEOMETRY_PRIVATE_URL || 'http://asiod-geometry-ai-v0:10000';
+
+const GEOMETRY_GATE_KEY = String(process.env.GEOMETRY_GATE_KEY || '').trim();
+
+function requireGeometryGate(req, res, next) {
+  const supplied =
+    String(req.get('x-asiod-page-key') || '').trim() ||
+    String(req.query.key || '').trim();
+
+  if (!GEOMETRY_GATE_KEY || supplied !== GEOMETRY_GATE_KEY) {
+    return res.status(403).json({
+      ok: false,
+      error: 'geometry_private_gate_locked',
+      private_14_field_exposed: false
+    });
+  }
+
+  return next();
+}
+
+app.get('/geometry', requireGeometryGate, async (_req, res) => {
+  try {
+    const upstream = await fetch(`${GEOMETRY_PRIVATE_URL}/`);
+    const body = await upstream.text();
+
+    return res
+      .status(upstream.status)
+      .type(upstream.headers.get('content-type') || 'text/html')
+      .send(body);
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      error: 'geometry_private_service_unreachable',
+      message: String(error.message || error),
+      private_14_field_exposed: false
+    });
+  }
+});
+
+app.get('/geometry/health', requireGeometryGate, async (_req, res) => {
+  try {
+    const upstream = await fetch(`${GEOMETRY_PRIVATE_URL}/health`);
+    const body = await upstream.text();
+
+    return res
+      .status(upstream.status)
+      .type(upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      error: 'geometry_private_health_unreachable',
+      message: String(error.message || error),
+      private_14_field_exposed: false
+    });
+  }
+});
+
 app.get('/api/a2a/execute', (_req, res) => {
   return res.status(200).json({
     ok: true,
