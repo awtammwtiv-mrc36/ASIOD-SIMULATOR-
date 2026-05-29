@@ -3551,7 +3551,15 @@ async function pullGeometryRoot(reason = 'sync') {
     });
 
     const body = await upstream.text();
-
+    
+console.log('[GEOMETRY_SYNC_OK]', {
+  reason,
+  url: geometryRootUrl(),
+  status: upstream.status,
+  contentType: upstream.headers.get('content-type') || 'none',
+  bodyBytes: Buffer.byteLength(body, 'utf8')
+});
+    
     geometryLinkState.status = upstream.ok ? 'online' : 'upstream-error';
     geometryLinkState.statusCode = upstream.status;
     geometryLinkState.contentType = upstream.headers.get('content-type') || 'text/html';
@@ -3575,6 +3583,12 @@ async function pullGeometryRoot(reason = 'sync') {
     geometryLinkState.error = String(error.message || error);
     geometryLinkState.lastErrorAt = new Date().toISOString();
 
+    console.warn('[GEOMETRY_SYNC_FAIL]', {
+  reason,
+  url: geometryRootUrl(),
+  error: String(error.message || error)
+});
+    
     return geometryLinkState;
   } finally {
     clearTimeout(timeout);
