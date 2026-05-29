@@ -155,8 +155,8 @@ const directBridgeRawJson = express.raw({
 });
 
 const AUTHORISED_WORKER_SECRETS = Object.freeze({
-  'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET,
-  'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET_2,
+  'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET_2,
+  'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET,
   'laptop-worker-03': process.env.FUNNEL_WEBHOOK_SECRET_3
 });
 
