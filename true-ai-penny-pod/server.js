@@ -154,6 +154,12 @@ const directBridgeRawJson = express.raw({
   limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
 });
 
+const AUTHORISED_WORKER_SECRETS = Object.freeze({
+  'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET,
+  'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET_2,
+  'laptop-worker-03': process.env.FUNNEL_WEBHOOK_SECRET_3
+});
+
 function directBridgeSecret() {
   return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
 }
@@ -475,19 +481,37 @@ app.post('/api/worker/heartbeat', directBridgeRawJson, async (req, res) => {
 
 app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-  const verified = directBridgeVerify(req, rawBody);
+  const body = directBridgeParseBody(rawBody);
+  const targetWorkerForSecret = String(
+    body.targetWorker ||
+    body.workerId ||
+    req.get('x-asiod-device') ||
+    ''
+  );
 
-  if (!verified.ok) {
-    return res.status(verified.status).json({
+  if (!AUTHORISED_WORKER_SECRETS[targetWorkerForSecret]) {
+    return res.status(403).json({
       ok: false,
-      ...verified,
+      error: 'unauthorised-worker',
+      workerId: targetWorkerForSecret || null,
       billable: false,
       auditedOnly: true,
       privateSourceExposed: false
     });
   }
 
-  const body = directBridgeParseBody(rawBody);
+  const verified = directBridgeVerify(req, rawBody, targetWorkerForSecret);
+
+  if (!verified.ok) {
+    return res.status(403).json({
+      ok: false,
+      ...verified,
+      billable: false,
+      auditedOnly: true,
+      privateSourceExposed: false
+    });
+    }
+
   const suppliedTargetWorker = body.targetWorker || body.workerId || null;
   const targetWorker = suppliedTargetWorker ? String(suppliedTargetWorker) : null;
   const jobId = String(body.jobId || `job_${crypto.randomUUID()}`);
@@ -504,7 +528,9 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
     eligibleWorkers: [
       'laptop-worker-01',
       'laptop-worker-02',
-      'laptop-worker-03'
+      'laptop-worker-03',
+      'laptop-worker-04'
+      
     ],
     route: 'direct-override-quiet-bridge',
     receivedAt: new Date().toISOString(),
