@@ -3649,7 +3649,7 @@ app.get('/api/geometry/link', requireGeometryGate, async (_req, res) => {
     hasCachedBody: Boolean(geometryLinkState.cachedBody),
     privateSourceExposed: false
   });
-}));
+});
 
 app.get('/geometry/health', requireGeometryGate, async (_req, res) => {
   try {
