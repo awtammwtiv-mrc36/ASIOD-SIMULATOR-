@@ -3629,7 +3629,7 @@ function requireGeometryGate(req, res, next) {
   return next();
 }
 
-app.get('/geometry', async (_req, res) => {
+app.get('/geometry', requireGeometryGate, async (_req, res) => {
   const state = await pullGeometryRoot('page-request');
 
   if (state.cachedBody) {
