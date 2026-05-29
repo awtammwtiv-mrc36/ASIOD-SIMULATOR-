@@ -3600,15 +3600,10 @@ function startGeometryPermanentLink() {
     console.warn('Geometry startup sync failed:', error.message || error);
   });
 
-  const timer = setInterval(() => {
-    pullGeometryRoot('interval').catch((error) => {
-      console.warn('Geometry interval sync failed:', error.message || error);
-    });
-  }, GEOMETRY_SYNC_INTERVAL_MS);
-
-  if (typeof timer.unref === 'function') {
-    timer.unref();
-  }
+  function startGeometryPermanentLink() {
+  pullGeometryRoot('startup').catch((error) => {
+    console.warn('Geometry startup sync failed:', error.message || error);
+  });
 }
 
 startGeometryPermanentLink();
