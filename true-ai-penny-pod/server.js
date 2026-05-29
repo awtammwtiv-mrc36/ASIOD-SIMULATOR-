@@ -3510,6 +3510,93 @@ const GEOMETRY_PRIVATE_URL =
   process.env.GEOMETRY_PRIVATE_URL || 'http://asiod-geometry-ai-v0:10000';
 
 const GEOMETRY_GATE_KEY = String(process.env.GEOMETRY_GATE_KEY || '').trim();
+const GEOMETRY_SYNC_INTERVAL_MS = Number.parseInt(
+  process.env.GEOMETRY_SYNC_INTERVAL_MS || '30000',
+  10
+);
+
+const geometryLinkState = {
+  status: 'starting',
+  startedAt: new Date().toISOString(),
+  lastAttemptAt: null,
+  lastOkAt: null,
+  lastErrorAt: null,
+  statusCode: null,
+  contentType: null,
+  bodyBytes: 0,
+  cachedBody: null,
+  error: null,
+  privateSourceExposed: false
+};
+
+function geometryRootUrl() {
+  return `${String(GEOMETRY_PRIVATE_URL || '').replace(/\/+$/, '')}/`;
+}
+
+async function pullGeometryRoot(reason = 'sync') {
+  geometryLinkState.lastAttemptAt = new Date().toISOString();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const upstream = await fetch(geometryRootUrl(), {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'x-asiod-internal-link': 'pennypod-geometry-sync',
+        'x-asiod-link-reason': reason
+      }
+    });
+
+    const body = await upstream.text();
+
+    geometryLinkState.status = upstream.ok ? 'online' : 'upstream-error';
+    geometryLinkState.statusCode = upstream.status;
+    geometryLinkState.contentType = upstream.headers.get('content-type') || 'text/html';
+    geometryLinkState.bodyBytes = Buffer.byteLength(body, 'utf8');
+    geometryLinkState.error = upstream.ok ? null : `upstream-status-${upstream.status}`;
+
+    if (body) {
+      geometryLinkState.cachedBody = body;
+    }
+
+    if (upstream.ok) {
+      geometryLinkState.lastOkAt = new Date().toISOString();
+    } else {
+      geometryLinkState.lastErrorAt = new Date().toISOString();
+    }
+
+    return geometryLinkState;
+  } catch (error) {
+    geometryLinkState.status = 'unreachable';
+    geometryLinkState.statusCode = null;
+    geometryLinkState.error = String(error.message || error);
+    geometryLinkState.lastErrorAt = new Date().toISOString();
+
+    return geometryLinkState;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function startGeometryPermanentLink() {
+  pullGeometryRoot('startup').catch((error) => {
+    console.warn('Geometry startup sync failed:', error.message || error);
+  });
+
+  const timer = setInterval(() => {
+    pullGeometryRoot('interval').catch((error) => {
+      console.warn('Geometry interval sync failed:', error.message || error);
+    });
+  }, GEOMETRY_SYNC_INTERVAL_MS);
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+}
+
+startGeometryPermanentLink();
 
 function requireGeometryGate(req, res, next) {
   const supplied =
@@ -3528,23 +3615,40 @@ function requireGeometryGate(req, res, next) {
 }
 
 app.get('/geometry', requireGeometryGate, async (_req, res) => {
-  try {
-    const upstream = await fetch(`${GEOMETRY_PRIVATE_URL}/`);
-    const body = await upstream.text();
+  const state = await pullGeometryRoot('page-request');
+
+  if (state.cachedBody) {
+    res.setHeader('Content-Type', state.contentType || 'text/html');
 
     return res
-      .status(upstream.status)
-      .type(upstream.headers.get('content-type') || 'text/html')
-      .send(body);
-  } catch (error) {
-    return res.status(502).json({
-      ok: false,
-      error: 'geometry_private_service_unreachable',
-      message: String(error.message || error),
-      private_14_field_exposed: false
-    });
+      .status(200)
+      .send(state.cachedBody);
   }
+
+  return res.status(502).json({
+    ok: false,
+    error: 'geometry_private_service_unreachable',
+    status: state.status,
+    message: state.error,
+    private_14_field_exposed: false
+  });
 });
+
+app.get('/api/geometry/link', protectedNoBody(async (_req, res) => {
+  return res.status(200).json({
+    ok: geometryLinkState.status === 'online',
+    status: geometryLinkState.status,
+    startedAt: geometryLinkState.startedAt,
+    lastAttemptAt: geometryLinkState.lastAttemptAt,
+    lastOkAt: geometryLinkState.lastOkAt,
+    lastErrorAt: geometryLinkState.lastErrorAt,
+    statusCode: geometryLinkState.statusCode,
+    contentType: geometryLinkState.contentType,
+    bodyBytes: geometryLinkState.bodyBytes,
+    hasCachedBody: Boolean(geometryLinkState.cachedBody),
+    privateSourceExposed: false
+  });
+}));
 
 app.get('/geometry/health', requireGeometryGate, async (_req, res) => {
   try {
