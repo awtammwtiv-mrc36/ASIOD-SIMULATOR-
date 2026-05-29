@@ -154,6 +154,92 @@ const directBridgeRawJson = express.raw({
   limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
 });
 
+const PRESSURE_FUSE_WINDOW_MS = Number.parseInt(process.env.PRESSURE_FUSE_WINDOW_MS || '60000', 10);
+const PRESSURE_FUSE_MAX_PER_KEY = Number.parseInt(process.env.PRESSURE_FUSE_MAX_PER_KEY || '60', 10);
+const PRESSURE_FUSE_GLOBAL_MAX = Number.parseInt(process.env.PRESSURE_FUSE_GLOBAL_MAX || '2000', 10);
+const PRESSURE_FUSE_BLOCK_MS = Number.parseInt(process.env.PRESSURE_FUSE_BLOCK_MS || '86400000', 10);
+const PRESSURE_FUSE_LOCKDOWN_MS = Number.parseInt(process.env.PRESSURE_FUSE_LOCKDOWN_MS || '600000', 10);
+
+const pressureBuckets = new Map();
+const pressureBlocked = new Map();
+
+let pressureGlobalBucket = {
+  resetAt: Date.now() + PRESSURE_FUSE_WINDOW_MS,
+  count: 0
+};
+
+let pressureLockdownUntil = 0;
+
+function pressureFuseGate(req, res, next) {
+  const now = Date.now();
+  const path = String(req.path || '/').split('?')[0].toLowerCase();
+  const method = String(req.method || 'GET').toUpperCase();
+  const agent = String(req.get('user-agent') || '').toLowerCase();
+  const ip = getClientIp(req);
+
+  if (path === '/stripe/webhook') {
+    return next();
+  }
+
+  if (process.env.EMERGENCY_LOCKDOWN === 'true' || now < pressureLockdownUntil) {
+    res.setHeader('Connection', 'close');
+    res.setHeader('Retry-After', '600');
+    return res.status(path === '/api/worker/poll' ? 403 : 204).end();
+  }
+
+  if (pressureGlobalBucket.resetAt <= now) {
+    pressureGlobalBucket = {
+      resetAt: now + PRESSURE_FUSE_WINDOW_MS,
+      count: 0
+    };
+  }
+
+  pressureGlobalBucket.count += 1;
+
+  if (pressureGlobalBucket.count > PRESSURE_FUSE_GLOBAL_MAX) {
+    pressureLockdownUntil = now + PRESSURE_FUSE_LOCKDOWN_MS;
+    console.warn(`[PRESSURE_LOCKDOWN] count=${pressureGlobalBucket.count} path=${path} ip=${ip}`);
+    res.setHeader('Connection', 'close');
+    res.setHeader('Retry-After', '600');
+    return res.status(path === '/api/worker/poll' ? 403 : 204).end();
+  }
+
+  const agentClass = agent.includes('axios')
+    ? 'axios'
+    : agent.includes('go-http-client')
+      ? 'go-http-client'
+      : agent.slice(0, 48);
+
+  const key = `${ip}|${method}|${path}|${agentClass}`;
+  const blockedUntil = pressureBlocked.get(key) || 0;
+
+  if (blockedUntil > now) {
+    res.setHeader('Connection', 'close');
+    res.setHeader('Retry-After', String(Math.ceil((blockedUntil - now) / 1000)));
+    return res.status(path === '/api/worker/poll' ? 403 : 204).end();
+  }
+
+  const existing = pressureBuckets.get(key);
+  const bucket = existing && existing.resetAt > now
+    ? existing
+    : { resetAt: now + PRESSURE_FUSE_WINDOW_MS, count: 0 };
+
+  bucket.count += 1;
+  pressureBuckets.set(key, bucket);
+
+  if (bucket.count > PRESSURE_FUSE_MAX_PER_KEY) {
+    pressureBlocked.set(key, now + PRESSURE_FUSE_BLOCK_MS);
+    console.warn(`[PRESSURE_BLOCK] key=${key} count=${bucket.count}`);
+    res.setHeader('Connection', 'close');
+    res.setHeader('Retry-After', String(Math.ceil(PRESSURE_FUSE_BLOCK_MS / 1000)));
+    return res.status(path === '/api/worker/poll' ? 403 : 204).end();
+  }
+
+  return next();
+}
+
+app.use(pressureFuseGate);
+
 const AUTHORISED_WORKER_SECRETS = Object.freeze({
   'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET_2,
   'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET,
