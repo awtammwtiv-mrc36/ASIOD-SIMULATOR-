@@ -160,6 +160,12 @@ const AUTHORISED_WORKER_SECRETS = Object.freeze({
   'laptop-worker-03': process.env.FUNNEL_WEBHOOK_SECRET_3
 });
 
+const DISABLED_WORKERS = new Set(
+  String(process.env.DISABLED_WORKERS || '')
+    .split(',')
+    .map((worker) => worker.trim())
+    .filter(Boolean)
+);
 function directBridgeSecret() {
   return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
 }
@@ -641,25 +647,41 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
 
 app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-  const verified = directBridgeVerify(req, rawBody);
+  const body = directBridgeParseBody(rawBody);
+  const workerId = directBridgeWorkerId(req, body);
+  const deviceId = directBridgeDeviceId(req, body);
 
-  if (!verified.ok) {
-  return res.status(410).json({
+if (DISABLED_WORKERS.has(workerId) || DISABLED_WORKERS.has(deviceId)) {
+  res.setHeader('Connection', 'close');
+  res.setHeader('Retry-After', '86400');
+
+  return res.status(403).json({
     ok: false,
-    gone: true,
     blocked: true,
-    error: 'worker-poll-gone',
-    originalError: verified.error,
-    originalStatus: verified.status,
+    error: 'worker-disabled',
+    workerId,
+    deviceId,
     billable: false,
     auditedOnly: true,
     privateSourceExposed: false
   });
-  }
+}
 
-  const body = directBridgeParseBody(rawBody);
-  const workerId = directBridgeWorkerId(req, body);
-  const deviceId = directBridgeDeviceId(req, body);
+  const verified = directBridgeVerify(req, rawBody, workerId);
+
+  if (!verified.ok) {
+    return res.status(403).json({
+      ok: false,
+      blocked: true,
+      error: 'bad-worker-signature',
+      originalError: verified.error,
+      originalStatus: verified.status,
+      billable: false,
+      auditedOnly: true,
+      privateSourceExposed: false
+    });
+      }
+  
   const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
 
   await directBridgeEnsureTables();
