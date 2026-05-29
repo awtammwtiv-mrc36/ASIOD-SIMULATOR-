@@ -3595,11 +3595,6 @@ console.log('[GEOMETRY_SYNC_OK]', {
   }
 }
 
-function startGeometryPermanentLink() {
-  pullGeometryRoot('startup').catch((error) => {
-    console.warn('Geometry startup sync failed:', error.message || error);
-  });
-
   function startGeometryPermanentLink() {
   pullGeometryRoot('startup').catch((error) => {
     console.warn('Geometry startup sync failed:', error.message || error);
