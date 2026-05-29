@@ -2687,7 +2687,7 @@ async function handleApiIntake(channel, req, res) {
 
 async function initDb() {
   if (!pool) {
-    console.log('DATABASE_URL not set. Catalogue database disabled.');
+    console.log('DATABASE_URL not set. Local catalogue file active. Render database closed.');
     return;
   }
 
