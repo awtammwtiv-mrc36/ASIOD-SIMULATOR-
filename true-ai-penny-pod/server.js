@@ -996,6 +996,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   
  '/geometry',
   '/geometry/health',
+  '/api/geometry/link',
   
   '/stripe/webhook',
 
@@ -3634,7 +3635,7 @@ app.get('/geometry', requireGeometryGate, async (_req, res) => {
   });
 });
 
-app.get('/api/geometry/link', protectedNoBody(async (_req, res) => {
+app.get('/api/geometry/link', requireGeometryGate, async (_req, res) => {
   return res.status(200).json({
     ok: geometryLinkState.status === 'online',
     status: geometryLinkState.status,
