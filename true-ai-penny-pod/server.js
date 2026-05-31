@@ -173,7 +173,7 @@ let pressureLockdownUntil = 0;
 function pressureFuseGate(req, res, next) {
   const now = Date.now();
   const path = String(req.path || '/').split('?')[0].toLowerCase();
-  const method = String(req.method || 'GET').toUpperCase();
+  const method = String(req.method || 'POST').toUpperCase();
   const agent = String(req.get('user-agent') || '').toLowerCase();
   const ip = getClientIp(req);
 
@@ -183,7 +183,7 @@ function pressureFuseGate(req, res, next) {
 
   if (process.env.EMERGENCY_LOCKDOWN === 'true' || now < pressureLockdownUntil) {
     res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', '600');
+    res.setHeader('Retry-After', '6000');
     return res.status(path === '/api/worker/poll' ? 403 : 204).end();
   }
 
@@ -200,7 +200,7 @@ function pressureFuseGate(req, res, next) {
     pressureLockdownUntil = now + PRESSURE_FUSE_LOCKDOWN_MS;
     console.warn(`[PRESSURE_LOCKDOWN] count=${pressureGlobalBucket.count} path=${path} ip=${ip}`);
     res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', '600');
+    res.setHeader('Retry-After', '6000');
     return res.status(path === '/api/worker/poll' ? 403 : 204).end();
   }
 
@@ -215,7 +215,7 @@ function pressureFuseGate(req, res, next) {
 
   if (blockedUntil > now) {
     res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', String(Math.ceil((blockedUntil - now) / 1000)));
+    res.setHeader('Retry-After', String(Math.ceil((blockedUntil - now) / 100)));
     return res.status(path === '/api/worker/poll' ? 403 : 204).end();
   }
 
@@ -231,7 +231,7 @@ function pressureFuseGate(req, res, next) {
     pressureBlocked.set(key, now + PRESSURE_FUSE_BLOCK_MS);
     console.warn(`[PRESSURE_BLOCK] key=${key} count=${bucket.count}`);
     res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', String(Math.ceil(PRESSURE_FUSE_BLOCK_MS / 1000)));
+    res.setHeader('Retry-After', String(Math.ceil(PRESSURE_FUSE_BLOCK_MS / 10000)));
     return res.status(path === '/api/worker/poll' ? 403 : 204).end();
   }
 
@@ -254,6 +254,8 @@ const DISABLED_WORKERS = new Set(
 );
 function directBridgeSecret() {
   return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
+  return String(process.env.FUNNEL_WEBHOOK_SECRET_2 || '').trim();
+  return String(process.env.FUNNEL_WEBHOOK_SECRET_3 || '').trim();
 }
 
 function directBridgeTimingSafeEqual(a, b) {
@@ -365,6 +367,8 @@ function directBridgeWorkerId(req, body) {
     body.workerId ||
     body.deviceId ||
     req.get('x-asiod-device') ||
+    'laptop-worker-01',
+    'laptop-worker-02',
     'laptop-worker-03'
   );
 }
@@ -374,6 +378,8 @@ function directBridgeDeviceId(req, body) {
     body.deviceId ||
     body.workerId ||
     req.get('x-asiod-device') ||
+    'local-device-01',
+    'local-device-02',
     'local-device-03'
   );
 }
@@ -496,6 +502,8 @@ app.get('/api/bridge/health', async (_req, res) => {
     mode: 'direct-override-quiet-bridge',
     routeInstalledDirectlyInServer: true,
     serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET),
+    serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET_2),
+    serverHasFunnelSecret: Boolean(process.env.FUNNEL_WEBHOOK_SECRET_3),
     funnelSecretLength: directBridgeSecret().length,
     database,
     expectedWorkers: [
@@ -595,7 +603,7 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   const verified = directBridgeVerify(req, rawBody, targetWorkerForSecret);
 
   if (!verified.ok) {
-    return res.status(403).json({
+    return res.status(401).json({
       ok: false,
       ...verified,
       billable: false,
@@ -736,7 +744,7 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
 
   if (pollAgent.includes('axios')) {
     res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', '86400');
+    res.setHeader('Retry-After', '864000');
 
     return res.status(403).end();
   }
@@ -748,9 +756,9 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
  
 if (DISABLED_WORKERS.has(workerId) || DISABLED_WORKERS.has(deviceId)) {
   res.setHeader('Connection', 'close');
-  res.setHeader('Retry-After', '86400');
+  res.setHeader('Retry-After', '864000');
 
-  return res.status(403).json({
+  return res.status(404).json({
     ok: false,
     blocked: true,
     error: 'worker-disabled',
@@ -867,7 +875,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 const STRIPE_LINK_A2A_3 = process.env.STRIPE_LINK_A2A_3 || '';
 const STRIPE_LINK_WEEKLY_15 = process.env.STRIPE_LINK_WEEKLY_15 || '';
-const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY || '';
+const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY_50 || '';
 
 const ADS_TXT = process.env.ADS_TXT || '';
 
@@ -964,7 +972,6 @@ const FAST_DROP_AGENTS = Object.freeze([
 ]);
 
 const ALLOWED_EXACT_PATHS = new Set([
-  '/',
   '/health',
 
   '/intake',
@@ -1823,7 +1830,7 @@ function buildPublicApiAgentCard() {
     shell: PUBLIC_API_SHELL,
     endpoints: {
       home: 'https://a2a.vagwalsall.co.uk/',
-      ai_home: 'https://a2a.vagwalsall.co.uk/',
+      ai_home: 'https://a2a.vagwalsall.co.uk/geometry,
       human_intake: 'https://a2a.vagwalsall.co.uk/intake',
       adverts: 'https://a2a.vagwalsall.co.uk/adverts',
       health: 'https://a2a.vagwalsall.co.uk/api/health',
@@ -1928,7 +1935,9 @@ function buildA2AAgentCard() {
       services: 'https://a2a.vagwalsall.co.uk/api/services',
       a2a_intake: 'https://a2a.vagwalsall.co.uk/api/a2a/intake',
       worker_poll: 'https://a2a.vagwalsall.co.uk/api/worker/poll',
-      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result'
+      worker_result: 'https://a2a.vagwalsall.co.uk/api/worker/result',
+      geometry_ai: 'https://a2a.vagwalsall.co.uk/geometry'
+     
     },
     asiod784: {
       integerLock: 784,
@@ -3270,7 +3279,7 @@ app.get('/pay/weekly', (_req, res) => {
 });
 
 app.get('/pay/monthly', (_req, res) => {
-  return redirectToPaymentLink(res, STRIPE_LINK_MONTHLY, 'Monthly');
+  return redirectToPaymentLink(res, STRIPE_LINK_MONTHLY, 'Monthly £50');
 });
 
 app.get('/', (_req, res) => {
@@ -3884,7 +3893,7 @@ app.post('/pod/b2b/client/create', protectedJson(async (req, res) => {
     companyName,
     contactEmail = null,
     branchId = null,
-    billingMode = 'manual',
+    billingMode = 'Automated,
     splitRule = {}
   } = req.body || {};
 
