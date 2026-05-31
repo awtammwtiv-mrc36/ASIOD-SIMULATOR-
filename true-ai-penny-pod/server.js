@@ -1830,12 +1830,12 @@ function buildPublicApiAgentCard() {
     shell: PUBLIC_API_SHELL,
     endpoints: {
       home: 'https://a2a.vagwalsall.co.uk/',
-      ai_home: 'http://asiod-geometry-ai-v0';
       human_intake: 'https://a2a.vagwalsall.co.uk/intake',
       adverts: 'https://a2a.vagwalsall.co.uk/adverts',
       health: 'https://a2a.vagwalsall.co.uk/api/health',
       services: 'https://a2a.vagwalsall.co.uk/api/services',
-
+      ai_home: 'http://a2a.vagwalsall.co.uk/geometry/link',
+    
       execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
       agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
       true_ai_manifest: 'https://a2a.vagwalsall.co.uk/.well-known/true-ai.json',
