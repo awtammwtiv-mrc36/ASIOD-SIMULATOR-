@@ -3893,7 +3893,7 @@ app.post('/pod/b2b/client/create', protectedJson(async (req, res) => {
     companyName,
     contactEmail = null,
     branchId = null,
-    billingMode = 'Automated,
+    billingMode = 'manual',
     splitRule = {}
   } = req.body || {};
 
