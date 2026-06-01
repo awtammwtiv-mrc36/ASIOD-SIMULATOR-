@@ -844,7 +844,7 @@ const PORT = process.env.PORT || 4242;
 
 const CANONICAL_HOST = process.env.CANONICAL_HOST || 'a2a.vagwalsall.co.uk';
 const RENDER_DEFAULT_HOST = process.env.RENDER_DEFAULT_HOST || 'asiod-true-ai-penny-pod.onrender.com';
-const BLOCK_RENDER_DEFAULT_HOST = process.env.BLOCK_RENDER_DEFAULT_HOST !== 'false';
+
 
 const APP_BASE_URL =
   process.env.APP_BASE_URL ||
@@ -880,7 +880,15 @@ const STRIPE_LINK_MONTHLY = process.env.STRIPE_LINK_MONTHLY_50 || '';
 const ADS_TXT = process.env.ADS_TXT || '';
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
-const pool = null;
+const pool = RAW_DATABASE_URL
+  ? new Pool({
+      connectionString: RAW_DATABASE_URL,
+      ssl: RAW_DATABASE_URL.includes('localhost')
+        ? false
+        : { rejectUnauthorized: false },
+      application_name: process.env.PGAPPNAME || 'asiod-main-app'
+    })
+  : null;
 const LOCAL_CATALOGUE_PATH =
   process.env.LOCAL_CATALOGUE_PATH ||
   path.join(process.cwd(), 'catalogue-local.jsonl');
