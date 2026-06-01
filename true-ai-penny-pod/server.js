@@ -872,6 +872,8 @@ const RATE_LIMIT_MAX = Number.parseInt(process.env.RATE_LIMIT_MAX || '120', 10);
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET_2;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET_3;
 
 const STRIPE_LINK_A2A_3 = process.env.STRIPE_LINK_A2A_3 || '';
 const STRIPE_LINK_WEEKLY_15 = process.env.STRIPE_LINK_WEEKLY_15 || '';
@@ -1843,6 +1845,7 @@ function buildPublicApiAgentCard() {
       adverts: 'https://a2a.vagwalsall.co.uk/adverts',
       health: 'https://a2a.vagwalsall.co.uk/api/health',
       services: 'https://a2a.vagwalsall.co.uk/api/services',
+      openapi: 'https://a2a.vagwalsall.co.uk/openapi.json',
       ai_home: 'http://a2a.vagwalsall.co.uk/geometry/link',
     
       execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
