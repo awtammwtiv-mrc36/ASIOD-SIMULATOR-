@@ -742,13 +742,6 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const pollAgent = String(req.get('user-agent') || '').toLowerCase();
 
-  if (pollAgent.includes('axios')) {
-    res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', '864000');
-
-    return res.status(403).end();
-  }
-
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
   const body = directBridgeParseBody(rawBody);
   const workerId = directBridgeWorkerId(req, body);
