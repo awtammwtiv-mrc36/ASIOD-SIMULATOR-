@@ -1940,6 +1940,7 @@ function buildA2AAgentCard() {
     endpoints: {
       execute: 'https://a2a.vagwalsall.co.uk/api/a2a/execute',
       health: 'https://a2a.vagwalsall.co.uk/api/health',
+      openapi: 'https://a2a.vagwalsall.co.uk/openapi.json',
       agent_card: 'https://a2a.vagwalsall.co.uk/.well-known/agent-card.json',
       api_card: 'https://a2a.vagwalsall.co.uk/api/agent-card',
       services: 'https://a2a.vagwalsall.co.uk/api/services',
