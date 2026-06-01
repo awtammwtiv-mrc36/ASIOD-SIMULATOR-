@@ -994,6 +994,7 @@ const ALLOWED_EXACT_PATHS = new Set([
   '/ads.txt',
   '/robots.txt',
   '/sitemap.xml',
+  '/openapi.json',
   '/favicon.ico',
   '/favicon.png',
 
@@ -3439,6 +3440,111 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/agent-card', (_req, res) => {
   return res.status(200).json(buildPublicApiAgentCard());
+});
+
+app.get('/openapi.json', (_req, res) => {
+  return res.status(200).json({
+    openapi: '3.1.0',
+    info: {
+      title: 'True AI Penny Pod A2A API',
+      version: '1.0.4-executable-784',
+      description: 'ASIOD 784-locked AI-to-AI bridge with public executable handshake, protected intake, catalogue logging, database queue, and sealed private source.'
+    },
+    servers: [
+      {
+        url: 'https://a2a.vagwalsall.co.uk'
+      }
+    ],
+    paths: {
+      '/api/health': {
+        get: {
+          summary: 'Check live service status',
+          operationId: 'getHealth',
+          responses: {
+            '200': { description: 'Service is live' }
+          }
+        }
+      },
+      '/api/a2a/execute': {
+        post: {
+          summary: 'Public executable handshake',
+          operationId: 'executeHandshake',
+          responses: {
+            '200': { description: 'Executable endpoint is live' }
+          }
+        }
+      },
+      '/api/a2a/intake': {
+        post: {
+          summary: 'Submit protected AI-to-AI work intake',
+          operationId: 'submitA2AIntake',
+          security: [
+            { clientApiKey: [] },
+            { businessApiKey: [] }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    agentId: { type: 'string' },
+                    serviceId: { type: 'string' },
+                    instruction: { type: 'string' },
+                    payload: { type: 'object' },
+                    targetWorker: { type: 'string' },
+                    units: { type: 'number' }
+                  },
+                  required: ['instruction']
+                }
+              }
+            }
+          },
+          responses: {
+            '202': { description: 'Job accepted and queued' },
+            '401': { description: 'Missing or invalid API key' }
+          }
+        }
+      },
+      '/api/receipt/{id}': {
+        get: {
+          summary: 'Read protected receipt by ID',
+          operationId: 'getReceipt',
+          security: [
+            { clientApiKey: [] },
+            { businessApiKey: [] }
+          ],
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': { description: 'Receipt found' },
+            '404': { description: 'Receipt not found' }
+          }
+        }
+      }
+    },
+    components: {
+      securitySchemes: {
+        clientApiKey: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'client-api-key'
+        },
+        businessApiKey: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'business-api-key'
+        }
+      }
+    }
+  });
 });
 
 app.post('/api/a2a/execute', express.json({ limit: '32kb' }), async (_req, res) => {
