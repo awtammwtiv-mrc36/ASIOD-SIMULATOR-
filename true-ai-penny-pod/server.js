@@ -181,12 +181,6 @@ function pressureFuseGate(req, res, next) {
     return next();
   }
 
-  if (process.env.EMERGENCY_LOCKDOWN === 'true' || now < pressureLockdownUntil) {
-    res.setHeader('Connection', 'close');
-    res.setHeader('Retry-After', '6000');
-    return res.status(path === '/api/worker/poll' ? 403 : 204).end();
-  }
-
   if (pressureGlobalBucket.resetAt <= now) {
     pressureGlobalBucket = {
       resetAt: now + PRESSURE_FUSE_WINDOW_MS,
