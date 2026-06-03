@@ -187,6 +187,19 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+app.get('/api/openai/health', async (_req, res) => {
+  try {
+    const response = await client.responses.create({
+      model: 'o3',                 // ← legacy reasoning model you asked for
+      input: 'Return only this text: ASIOD_OPENAI_OK'
+    });
+
+    return res.json({ ok: true, output: response.output_text });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 const directBridgeRawJson = express.raw({
   type: 'application/json',
   limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
