@@ -1,4 +1,3 @@
-import OpenAI from 'openai';
 import crypto from 'crypto';
 import express from 'express';
 import Stripe from 'stripe';
@@ -8,7 +7,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import OpenAI from 'openai';
 const client = new OpenAI();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let HYBRID_ENGINE_WORKER_BRIDGE = Object.freeze({
