@@ -6,9 +6,44 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import OpenAI from 'openai';
 
-const client = new OpenAI();
+const client = {
+  responses: {
+    create: async function createOpenAIResponse(payload) {
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error ${response.status}: ${JSON.stringify(data)}`);
+      }
+
+      if (typeof data.output_text === 'string') {
+        return data;
+      }
+
+      const outputText = Array.isArray(data.output)
+        ? data.output
+            .flatMap((item) => Array.isArray(item.content) ? item.content : [])
+            .filter((part) => part.type === 'output_text')
+            .map((part) => part.text || '')
+            .join('')
+        : '';
+
+      return {
+        ...data,
+        output_text: outputText
+      };
+    }
+  }
+};;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
