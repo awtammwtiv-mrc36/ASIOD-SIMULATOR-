@@ -753,8 +753,7 @@ function pushJobToMatchingWorkers(targetWorker, jobEnvelope) {
   }
   return pushed;
 }
-SECTION 2 OF 2
-JavaScript
+
 async function directBridgeEnsureTables() {
   if (!pool) return false;
 
