@@ -1605,7 +1605,6 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
 });
 
   const pollLimit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
-  const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '300000', 10);
 
   await directBridgeEnsureTables();
 
