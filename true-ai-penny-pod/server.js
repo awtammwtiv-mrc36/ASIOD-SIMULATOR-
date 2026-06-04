@@ -1568,20 +1568,21 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
     jobs = result.rows;
   }
 if (!jobs.length) {
-  res.setHeader('Retry-After', String(Math.ceil(nextPollMs / 10000)));
+  res.setHeader('Retry-After', String(Math.ceil(nextPollMs / 1000)));
   res.setHeader('X-Next-Poll-Ms', String(nextPollMs));
   return res.status(204).end();
 }
-  return res.status(200).json({
-    ok: true,
-    workerId,
-    deviceId,
-    count: jobs.length,
-    jobs,
-    nextPollMs,
-    authMode: verified.mode || verified.signatureMode,
-    privateSourceExposed: false
-  });
+
+return res.status(200).json({
+  ok: true,
+  workerId,
+  deviceId,
+  count: jobs.length,
+  jobs,
+  nextPollMs,
+  authMode: verified.mode || verified.signatureMode,
+  privateSourceExposed: false
+});
 });
 
 app.post('/api/worker/claim', directBridgeRawJson, async (req, res) => {
