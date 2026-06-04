@@ -2033,7 +2033,6 @@ function hostGate(req, res, next) {
 
   if (host === RENDER_DEFAULT_HOST) {
     if (
-      path === '/' ||
       path === '/health' ||
       path === '/api/health' ||
       path === '/.well-known/agent-card.json' ||
@@ -2865,7 +2864,7 @@ function installWorkerStreamRouteOnce() {
       });
     }
 
-    const deviceId = String(req.query?.deviceId || req.query?.workerId || 'laptop-worker-01');
+    const deviceId = String(req.query?.deviceId || req.query?.workerId || 'laptop-worker','laptop-worker-02', 'laptop-worker-03');
 
     await directBridgeEnsureTables();
 
@@ -3358,7 +3357,7 @@ app.get('/health', (_req, res) => {
     service: 'True AI Penny Pod',
     version: '1.0.4-executable-784',
     status: 'live',
-    publicPages: ['/', '/adverts', '/.well-known/agent-card.json'],
+    publicPages: ['/adverts', '/.well-known/agent-card.json'],
     humanFallback: '/intake',
     executableHandshake: '/api/a2a/execute',
     machineIntake: '/api/a2a/intake',
