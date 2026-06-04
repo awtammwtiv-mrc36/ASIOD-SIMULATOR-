@@ -1499,6 +1499,83 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
     jobs = result.rows;
   }
 
+  if (!jobs.length) {
+    res.setHeader('Retry-After', String(Math.ceil(nextPollMs / 1000)));
+    res.setHeader('X-Next-Poll-Ms', String(nextPollMs));
+    return res.status(204).end();
+  }
+
+  return res.status(200).json({
+    ok: true,
+    workerId,
+    deviceId,
+    count: jobs.length,
+    jobs,
+    nextPollMs,
+    authMode: verified.mode || verified.signatureMode,
+    privateSourceExposed: false
+  });
+});
+
+  if (DISABLED_WORKERS.has(workerId)) {
+    return res.status(403).json({
+      ok: false,
+      error: 'worker-disabled',
+      workerId,
+      privateSourceExposed: false
+    });
+  }
+
+  const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
+  const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '300000', 10);
+
+  await directBridgeEnsureTables();
+
+  let jobs = [];
+
+  if (pool) {
+    await pool.query(
+      `insert into worker_nodes (id, device_id, label, status, capabilities, last_seen, last_seen_at, body)
+       values ($1, $2, $1, 'online', '{}'::jsonb, now(), now(), $3)
+       on conflict (id) do update
+       set device_id = excluded.device_id,
+           status = 'online',
+           last_seen = now(),
+           last_seen_at = now(),
+           body = excluded.body`,
+      [workerId, deviceId, body]
+    );
+
+    const result = await pool.query(
+      `with picked as (
+         select id
+         from worker_jobs
+         where (
+           status = 'queued'
+           or (
+             status = 'claimed'
+             and lease_until is not null
+             and lease_until < now()
+           )
+         )
+         and (target_worker is null or target_worker = $1)
+         order by created_at asc
+         limit $2
+       )
+       update worker_jobs
+       set status = 'claimed',
+           target_worker = coalesce(target_worker, $1),
+           claimed_at = coalesce(claimed_at, now()),
+           lease_until = now() + interval '10 minutes',
+           updated_at = now()
+       where id in (select id from picked)
+       returning id, target_worker, processing_mode, status, body, created_at, lease_until`,
+      [workerId, limit]
+    );
+
+    jobs = result.rows;
+  }
+
   return res.status(200).json({
     ok: true,
     workerId,
