@@ -205,30 +205,31 @@ const directBridgeRawJson = express.raw({
   limit: process.env.FUNNEL_BODY_LIMIT || '64kb'
 });
 
-const AUTHORISED_WORKER_SECRETS = Object.freeze({
-  'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET_2,
-  'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET,
-  'laptop-worker-03': process.env.FUNNEL_WEBHOOK_SECRET_3
-});
+function directBridgeSecret(workerId = null) {
+  const secrets = {
+    'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET_2 || process.env.FUNNEL_WEBHOOK_SECRET,
+    'laptop-worker-02': process.env.FUNNEL_WEBHOOK_SECRET || process.env.FUNNEL_WEBHOOK_SECRET_2,
+    'laptop-worker-03': process.env.FUNNEL_WEBHOOK_SECRET_3 || process.env.FUNNEL_WEBHOOK_SECRET
+  };
 
-const DISABLED_WORKERS = new Set(
-  String(process.env.DISABLED_WORKERS || '')
-    .split(',')
-    .map((worker) => worker.trim())
-    .filter(Boolean)
-);
-function directBridgeSecret() {
-  return String(process.env.FUNNEL_WEBHOOK_SECRET || '').trim();
-  return String(process.env.FUNNEL_WEBHOOK_SECRET_2 || '').trim();
-  return String(process.env.FUNNEL_WEBHOOK_SECRET_3 || '').trim();
+  return String(
+    workerId && secrets[workerId]
+      ? secrets[workerId]
+      : process.env.FUNNEL_WEBHOOK_SECRET || ''
+  ).trim();
 }
 
-function directBridgeTimingSafeEqual(a, b) {
-  const left = Buffer.from(String(a || ''), 'utf8');
-  const right = Buffer.from(String(b || ''), 'utf8');
-
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
+function directBridgeSecretCandidates(workerId = null) {
+  return [
+    directBridgeSecret(workerId),
+    process.env.FUNNEL_WEBHOOK_SECRET,
+    process.env.FUNNEL_WEBHOOK_SECRET_2,
+    process.env.FUNNEL_WEBHOOK_SECRET_3,
+    ...Object.values(AUTHORISED_WORKER_SECRETS)
+  ]
+    .map((secret) => String(secret || '').trim())
+    .filter(Boolean)
+    .filter((secret, index, list) => list.indexOf(secret) === index); 
 }
 
 function directBridgeHmacHex(secret, payloadBuffer) {
@@ -239,12 +240,12 @@ function directBridgeHmacBase64(secret, payloadBuffer) {
   return crypto.createHmac('sha256', secret).update(payloadBuffer).digest('base64');
 }
 
-function directBridgeVerify(req, rawBody) {
-  const secret = directBridgeSecret();
+function directBridgeVerify(req, rawBody, workerId = null) {
+  const secrets = directBridgeSecretCandidates(workerId);
   const timestamp = String(req.get('x-asiod-timestamp') || '');
   const supplied = String(req.get('x-asiod-signature') || '').trim();
 
-  if (!secret) {
+  if (!secrets.length) {
     return {
       ok: false,
       status: 503,
@@ -258,7 +259,7 @@ function directBridgeVerify(req, rawBody) {
       ok: false,
       status: 401,
       error: 'signature-required',
-      serverSecretLength: secret.length
+      serverSecretLength: secrets[0].length
     };
   }
 
@@ -271,7 +272,7 @@ function directBridgeVerify(req, rawBody) {
       ok: false,
       status: 401,
       error: 'stale-timestamp',
-      serverSecretLength: secret.length,
+      serverSecretLength: secrets[0].length,
       timestampAgeMs: Number.isFinite(ageMs) ? ageMs : null
     };
   }
@@ -281,32 +282,35 @@ function directBridgeVerify(req, rawBody) {
     rawBody
   ]);
 
-  const expectedHex = directBridgeHmacHex(secret, signedPayload);
-  const expectedHexPrefixed = `sha256=${expectedHex}`;
-  const expectedBase64 = directBridgeHmacBase64(secret, signedPayload);
+  for (const secret of secrets) {
+    const expectedHex = directBridgeHmacHex(secret, signedPayload);
+    const expectedHexPrefixed = `sha256=${expectedHex}`;
+    const expectedBase64 = directBridgeHmacBase64(secret, signedPayload);
 
-  if (
-    directBridgeTimingSafeEqual(supplied, expectedHex) ||
-    directBridgeTimingSafeEqual(supplied, expectedHexPrefixed) ||
-    directBridgeTimingSafeEqual(supplied, expectedBase64)
-  ) {
-    return {
-      ok: true,
-      timestamp,
-      signatureMode:
-        supplied === expectedBase64
-          ? 'base64'
-          : supplied.startsWith('sha256=')
-            ? 'sha256-prefixed-hex'
-            : 'hex'
-    };
+    if (
+      directBridgeTimingSafeEqual(supplied, expectedHex) ||
+      directBridgeTimingSafeEqual(supplied, expectedHexPrefixed) ||
+      directBridgeTimingSafeEqual(supplied, expectedBase64)
+    ) {
+      return {
+        ok: true,
+        timestamp,
+        serverSecretLength: secret.length,
+        signatureMode:
+          supplied === expectedBase64
+            ? 'base64'
+            : supplied.startsWith('sha256=')
+              ? 'sha256-prefixed-hex'
+              : 'hex'
+      };
+    }
   }
 
   return {
     ok: false,
     status: 401,
     error: 'bad-signature',
-    serverSecretLength: secret.length,
+    serverSecretLength: secrets[0].length,
     suppliedSignatureLength: supplied.length,
     rawBodyBytes: rawBody.length,
     expectedFormatsAccepted: [
