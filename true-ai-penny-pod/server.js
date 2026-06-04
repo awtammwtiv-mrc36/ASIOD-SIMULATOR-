@@ -1517,14 +1517,6 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   });
 });
 
-  if (DISABLED_WORKERS.has(workerId)) {
-    return res.status(403).json({
-      ok: false,
-      error: 'worker-disabled',
-      workerId,
-      privateSourceExposed: false
-    });
-  }
 
   const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
   const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '300000', 10);
