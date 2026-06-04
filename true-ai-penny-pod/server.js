@@ -1557,22 +1557,7 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
     [workerId, deviceId, body]
   );
 
-  const result = await pool.query(
-    `with picked as (
-      select id
-      from worker_jobs
-      where (
-        status = 'queued'
-        or (
-          status = 'claimed'
-          and lease_until is not null
-          and lease_until < now()
-        )
-      )
-      and (target_worker is null or target_worker = $1)
-      order by created_at asc
-      limit $2
-
+  
 app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
   const body = directBridgeParseBody(rawBody);
