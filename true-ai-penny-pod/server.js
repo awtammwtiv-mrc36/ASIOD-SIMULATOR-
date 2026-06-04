@@ -1055,8 +1055,8 @@ async function handleApiIntake(channel, req, res) {
   try {
     receipt = await createApiReceipt(channel, {
       ...incomingBody,
-      targetWorker: incomingBody.targetWorker || null,
-      dispatchMode: incomingBody.targetWorker ? 'specific-worker' : 'any-live-worker',
+      targetWorker: null,
+      dispatchMode: 'internal-worker-first-then-openai',
       source: `${channel}-machine-intake`,
       shellSerial: SHELL_REGISTRY.externalPublicLayer.shellSerial,
       shellStatus: SHELL_REGISTRY.externalPublicLayer.status
@@ -1083,42 +1083,53 @@ async function handleApiIntake(channel, req, res) {
         units: Number(incomingBody.units || 0)
       });
 
-      return res.status(200).json({ ok: true, channel, status: 'processed', route: 'internal-worker-first', receiptId: receipt.receiptId, result: internalResult, privateSourceExposed: false });
+      return res.status(200).json({
+        ok: true,
+        channel,
+        status: 'processed',
+        route: 'internal-worker-first',
+        receiptId: receipt.receiptId,
+        result: internalResult,
+        privateSourceExposed: false
+      });
     }
   } catch (error) {
     console.error(`Internal worker failed for ${channel}:`, error);
   }
 
   try {
-    const queued = await queueAnyLiveWorkerJob({
-      channel,
-      source: `${channel}-machine-intake`,
-      route: 'protected-machine-intake-to-any-live-worker',
-      externalId: receipt.receiptId,
-      payload: { ...incomingBody, receiptId: receipt.receiptId, privateSourceExposed: false },
-      receiptId: receipt.receiptId,
+    const model = typeof incomingBody.model === 'string' && incomingBody.model.trim() ? incomingBody.model.trim() : 'o3';
+
+    const input =
+      typeof incomingBody.instruction === 'string' && incomingBody.instruction.trim()
+        ? incomingBody.instruction.trim()
+        : typeof incomingBody.input === 'string' && incomingBody.input.trim()
+          ? incomingBody.input.trim()
+          : JSON.stringify(incomingBody.payload ?? incomingBody);
+
+    const openaiResponse = await client.responses.create({ model, input });
+
+    await writeCatalogueRecord({
+      id: `cat_openai_${receipt.receiptId}`,
+      agentId: channel,
+      recordType: `api_${channel}_openai_result`,
+      title: `OpenAI result: ${receipt.receiptId}`,
+      body: { receiptId: receipt.receiptId, channel, model, output_text: openaiResponse.output_text, privateSourceExposed: false },
       units: Number(incomingBody.units || 0)
     });
 
-    return res.status(202).json({
+    return res.status(200).json({
       ok: true,
       channel,
-      status: 'queued',
-      route: 'worker-queue-fallback',
-      jobId: queued.jobId,
-      packetId: queued.packetId,
-      targetWorker: queued.targetWorker,
-      target_worker: queued.target_worker,
-      dispatchMode: queued.dispatchMode,
+      status: 'completed',
+      route: 'direct-openai-fallback',
       receiptId: receipt.receiptId,
-      workerQueueStored: queued.workerQueueStored,
-      source: `${channel}-machine-intake`,
-      next: { workerStream: '/api/worker/stream', workerPoll: '/api/worker/poll', workerClaim: '/api/worker/claim', workerResult: '/api/worker/result' },
+      output: openaiResponse.output_text,
       privateSourceExposed: false
     });
   } catch (error) {
-    console.error(`API intake queue failed for ${channel}:`, error);
-    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_queue_failed', privateSourceExposed: false });
+    console.error(`Direct OpenAI fallback failed for ${channel}:`, error);
+    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_openai_failed', privateSourceExposed: false });
   }
 }
 
