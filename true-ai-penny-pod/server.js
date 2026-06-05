@@ -41,13 +41,9 @@ const pool = RAW_DATABASE_URL
   ? new Pool({
       connectionString: RAW_DATABASE_URL,
       ssl: RAW_DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      application_name: process.env.PGAPPNAME || 'asiod-main-app'
-    })
-  : null;
-
-const client = {
-  responses: {
-    create: async function createOpenAIResponse(payload) {
+      const client = {
+      responses: {
+      create: async function createOpenAIResponse(payload) {
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -101,6 +97,23 @@ const workerStreams = new Map();
 const legacyCoinLedger = [];
 const legacyCoinTotals = new Map();
 const A2A_JOBS = new Map();
+const workerPollThrottle = new Map();
+
+let ENSURE_TABLES_ONCE = null;
+
+async function ensureTablesOnce() {
+  if (!pool) return false;
+  if (!ENSURE_TABLES_ONCE) {
+    ENSURE_TABLES_ONCE = (async () => {
+      await directBridgeEnsureTables();
+      return true;
+    })().catch((err) => {
+      ENSURE_TABLES_ONCE = null;
+      throw err;
+    });
+  }
+  return ENSURE_TABLES_ONCE;
+}
 
 const AUTHORISED_WORKER_SECRETS = Object.freeze({
   'laptop-worker-01': process.env.FUNNEL_WEBHOOK_SECRET_2 || process.env.FUNNEL_WEBHOOK_SECRET,
@@ -1017,7 +1030,7 @@ async function queueAnyLiveWorkerJob({ channel = 'a2a', source = 'machine-intake
   };
 
   if (pool) {
-    await directBridgeEnsureTables();
+    await ensureTablesOnce();
     await pool.query(
       `insert into worker_jobs (id, target_worker, processing_mode, status, body, updated_at)
        values ($1, $2, 'local-worker', 'queued', $3, now())
@@ -1409,7 +1422,7 @@ app.post('/api/funnel/intake', directBridgeRawJson, async (req, res) => {
   const packetId = String(body.packetId || `packet_${crypto.randomUUID()}`);
   const agentId = String(body.agentId || body.workerId || 'local-reality-bridge');
   const jobRecord = { ...body, jobId, packetId, targetWorker, target_worker: targetWorker, dispatchMode: targetWorker ? 'specific-worker' : 'any-live-worker', eligibleWorkers: ['laptop-worker-01', 'laptop-worker-02', 'laptop-worker-03'], route: 'direct-override-quiet-bridge', receivedAt: new Date().toISOString(), privateSourceExposed: false };
-  await directBridgeEnsureTables();
+  await ensureTablesOnce();
   if (pool) {
     await pool.query(`insert into inbound_funnel_jobs (id, agent_id, source_ip, source_shell, bridge_serial, status, headers, body) values ($1, $2, $3, $4, $5, 'queued', $6, $7) on conflict (id) do update set agent_id = excluded.agent_id, source_ip = excluded.source_ip, source_shell = excluded.source_shell, bridge_serial = excluded.bridge_serial, status = 'queued', headers = excluded.headers, body = excluded.body`, [jobId, agentId, req.ip, 'ASIOD-SHELL-002-PUBLIC-6FIELD', 'ASIOD-BRIDGE-003-HYBRID-ENGINE-WORKER', { timestamp: verified.timestamp, signatureMode: verified.signatureMode, userAgent: req.get('user-agent') || '' }, jobRecord]);
     await pool.query(`insert into worker_jobs (id, target_worker, processing_mode, status, body, updated_at) values ($1, $2, 'local-worker', 'queued', $3, now()) on conflict (id) do update set target_worker = excluded.target_worker, processing_mode = excluded.processing_mode, status = 'queued', lease_until = null, body = excluded.body, updated_at = now()`, [jobId, targetWorker, jobRecord]);
@@ -1427,7 +1440,7 @@ app.post('/api/worker/heartbeat', directBridgeRawJson, async (req, res) => {
   if (!verified.ok) return res.status(verified.status || 403).json({ ok: false, ...verified, billable: false, auditedOnly: true, privateSourceExposed: false });
   if (DISABLED_WORKERS.has(workerId)) return res.status(403).json({ ok: false, error: 'worker-disabled', workerId, privateSourceExposed: false });
   const deviceId = directBridgeDeviceId(req, body);
-  await directBridgeEnsureTables();
+  await ensureTablesOnce();
   if (pool) {
     await pool.query(`insert into worker_nodes (id, device_id, label, status, capabilities, last_seen, last_seen_at, body) values ($1, $2, $3, 'online', $4, now(), now(), $5) on conflict (id) do update set device_id = excluded.device_id, label = excluded.label, status = 'online', capabilities = excluded.capabilities, last_seen = now(), last_seen_at = now(), body = excluded.body`, [workerId, deviceId, String(body.label || workerId), body.capabilities && typeof body.capabilities === 'object' ? body.capabilities : {}, body]);
   }
@@ -1461,9 +1474,25 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   }
 
   const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
-  const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '3000000', 10);
+  const minPollMs = Number.parseInt(process.env.WORKER_POLL_MIN_MS || '30000', 10);
+  const nowMs = Date.now();
+  const lastPollMs = workerPollThrottle.get(workerId) || 0;
 
-  await directBridgeEnsureTables();
+  if (Number.isFinite(minPollMs) && minPollMs > 0 && nowMs - lastPollMs < minPollMs) {
+    const retryAfterMs = minPollMs - (nowMs - lastPollMs);
+    return res.status(429).json({
+      ok: false,
+      error: 'poll-too-fast',
+      workerId,
+      retryAfterMs,
+      nextPollMs: Math.max(nextPollMs, retryAfterMs),
+      privateSourceExposed: false
+    });
+  }
+
+  workerPollThrottle.set(workerId, nowMs);
+
+  await ensureTablesOnce();
 
   let jobs = [];
 
@@ -1494,6 +1523,7 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
          )
          and (target_worker is null or target_worker = $1)
          order by created_at asc
+         for update skip locked
          limit $2
        )
        update worker_jobs
@@ -1557,7 +1587,7 @@ app.get('/api/worker/stream', async (req, res) => {
   if (!verified.ok) return res.status(verified.status || 403).json({ ok: false, error: verified.error || 'worker-auth-required', privateSourceExposed: false });
   if (DISABLED_WORKERS.has(workerId)) return res.status(403).json({ ok: false, error: 'worker-disabled', workerId, privateSourceExposed: false });
   if (!pool) return res.status(503).json({ ok: false, error: 'DATABASE_URL is not attached' });
-  await directBridgeEnsureTables();
+  await ensureTablesOnce();
   await pool.query(`insert into worker_nodes (id, device_id, label, status, capabilities, last_seen, last_seen_at, body) values ($1, $1, $1, 'online', '{}'::jsonb, now(), now(), $2) on conflict (id) do update set status = 'online', last_seen = now(), last_seen_at = now(), body = excluded.body`, [workerId, { stream: true, connectedAt: new Date().toISOString() }]);
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream');
