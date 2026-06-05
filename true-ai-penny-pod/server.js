@@ -854,7 +854,7 @@ async function directBridgeEnsureTables() {
     alter table worker_nodes add column if not exists body jsonb not null default '{}'::jsonb;
     alter table worker_nodes add column if not exists created_at timestamptz not null default now();
     alter table worker_jobs add column if not exists target_worker text;
-    alter table worker_jobs add column if not exists processing_mode text not null default 'local-worker';
+    alter table worker_jobs add column if not exists processing_mode text not null default 'internal-worker';
     alter table worker_jobs add column if not exists status text not null default 'queued';
     alter table worker_jobs add column if not exists lease_until timestamptz;
     alter table worker_jobs add column if not exists body jsonb not null default '{}'::jsonb;
