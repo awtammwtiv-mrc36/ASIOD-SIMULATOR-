@@ -43,7 +43,7 @@ const pool = RAW_DATABASE_URL
       ssl: RAW_DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
       application_name: process.env.PGAPPNAME || 'asiod-main-app',
       max: 2,
-      idleTimeoutMillis: 3000000,
+      idleTimeoutMillis: 300000,
       connectionTimeoutMillis: 5000
     })
   : null;
@@ -854,7 +854,7 @@ async function directBridgeEnsureTables() {
     alter table worker_nodes add column if not exists body jsonb not null default '{}'::jsonb;
     alter table worker_nodes add column if not exists created_at timestamptz not null default now();
     alter table worker_jobs add column if not exists target_worker text;
-    alter table worker_jobs add column if not exists processing_mode text not null default 'internal-worker';
+    alter table worker_jobs add column if not exists processing_mode text not null default 'local-worker';
     alter table worker_jobs add column if not exists status text not null default 'queued';
     alter table worker_jobs add column if not exists lease_until timestamptz;
     alter table worker_jobs add column if not exists body jsonb not null default '{}'::jsonb;
@@ -1123,40 +1123,38 @@ async function handleApiIntake(channel, req, res) {
   }
 
   try {
-    const queued = await queueAnyLiveWorkerJob({
-      channel,
-      source: `${channel}-machine-intake`,
-      route: 'machine-intake-to-any-live-worker',
-      externalId: receipt.receiptId,
-      payload: { ...incomingBody, receiptId: receipt.receiptId, privateSourceExposed: false },
-      receiptId: receipt.receiptId,
-      units: Number(incomingBody.units || 0)
-    });
+    const model = typeof incomingBody.model === 'string' && incomingBody.model.trim() ? incomingBody.model.trim() : 'o3';
+
+    const input =
+      typeof incomingBody.instruction === 'string' && incomingBody.instruction.trim()
+        ? incomingBody.instruction.trim()
+        : typeof incomingBody.input === 'string' && incomingBody.input.trim()
+          ? incomingBody.input.trim()
+          : JSON.stringify(incomingBody.payload ?? incomingBody);
+
+    const openaiResponse = await client.responses.create({ model, input });
 
     await writeCatalogueRecord({
-      id: `cat_queued_${receipt.receiptId}`,
+      id: `cat_openai_${receipt.receiptId}`,
       agentId: channel,
-      recordType: `api_${channel}_queued`,
-      title: `Worker job queued: ${queued.jobId}`,
-      body: { receiptId: receipt.receiptId, channel, queued, privateSourceExposed: false },
+      recordType: `api_${channel}_openai_result`,
+      title: `OpenAI result: ${receipt.receiptId}`,
+      body: { receiptId: receipt.receiptId, channel, model, output_text: openaiResponse.output_text, privateSourceExposed: false },
       units: Number(incomingBody.units || 0)
     });
 
-    return res.status(202).json({
+    return res.status(200).json({
       ok: true,
       channel,
-      status: 'queued',
-      route: 'worker-queue-fallback',
+      status: 'completed',
+      route: 'direct-openai-fallback',
       receiptId: receipt.receiptId,
-      jobId: queued.jobId,
-      packetId: queued.packetId,
-      target_worker: queued.target_worker,
-      dispatchMode: queued.dispatchMode,
+      output: openaiResponse.output_text,
       privateSourceExposed: false
     });
   } catch (error) {
-    console.error(`Worker queue fallback failed for ${channel}:`, error);
-    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_queue_failed', privateSourceExposed: false });
+    console.error(`Direct OpenAI fallback failed for ${channel}:`, error);
+    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_openai_failed', privateSourceExposed: false });
   }
 }
 
@@ -1488,14 +1486,14 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   }
 
 const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
-const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '6000000', 10);
-const minPollMs = Number.parseInt(process.env.WORKER_POLL_MIN_MS || '60000', 10);
+const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '3000000', 10);
+const minPollMs = Number.parseInt(process.env.WORKER_POLL_MIN_MS || '30000', 10);
 const nowMs = Date.now();
 const lastPollMs = workerPollThrottle.get(workerId) || 0;
 
   if (Number.isFinite(minPollMs) && minPollMs > 0 && nowMs - lastPollMs < minPollMs) {
     const retryAfterMs = minPollMs - (nowMs - lastPollMs);
-    return res.status(204).json({
+    return res.status(429).json({
       ok: false,
       error: 'poll-too-fast',
       workerId,
