@@ -41,9 +41,16 @@ const pool = RAW_DATABASE_URL
   ? new Pool({
       connectionString: RAW_DATABASE_URL,
       ssl: RAW_DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      const client = {
-      responses: {
-      create: async function createOpenAIResponse(payload) {
+      application_name: process.env.PGAPPNAME || 'asiod-main-app',
+      max: 2,
+      idleTimeoutMillis: 300000,
+      connectionTimeoutMillis: 5000
+    })
+  : null;
+
+const client = {
+  responses: {
+    create: async function createOpenAIResponse(payload) {
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -52,18 +59,23 @@ const pool = RAW_DATABASE_URL
         },
         body: JSON.stringify(payload)
       });
+
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(`OpenAI API error ${response.status}: ${JSON.stringify(data)}`);
       }
+
       if (typeof data.output_text === 'string') return data;
+
       const outputText = Array.isArray(data.output)
         ? data.output
-            .flatMap((item) => Array.isArray(item.content) ? item.content : [])
+            .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
             .filter((part) => part.type === 'output_text')
             .map((part) => part.text || '')
             .join('')
         : '';
+
       return { ...data, output_text: outputText };
     }
   }
