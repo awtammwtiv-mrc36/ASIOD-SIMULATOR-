@@ -1486,8 +1486,8 @@ app.post('/api/worker/poll', directBridgeRawJson, async (req, res) => {
   }
 
 const limit = Math.max(1, Math.min(Number.parseInt(body.limit || '5', 10), 25));
-const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '3000000', 10);
-const minPollMs = Number.parseInt(process.env.WORKER_POLL_MIN_MS || '30000', 10);
+const nextPollMs = Number.parseInt(process.env.WORKER_POLL_MS || '6000000', 10);
+const minPollMs = Number.parseInt(process.env.WORKER_POLL_MIN_MS || '60000', 10);
 const nowMs = Date.now();
 const lastPollMs = workerPollThrottle.get(workerId) || 0;
 
