@@ -1495,7 +1495,7 @@ const lastPollMs = workerPollThrottle.get(workerId) || 0;
 
   if (Number.isFinite(minPollMs) && minPollMs > 0 && nowMs - lastPollMs < minPollMs) {
     const retryAfterMs = minPollMs - (nowMs - lastPollMs);
-    return res.status(429).json({
+    return res.status(404).json({
       ok: false,
       error: 'poll-too-fast',
       workerId,
