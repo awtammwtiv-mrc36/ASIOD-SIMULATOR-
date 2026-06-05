@@ -1123,38 +1123,40 @@ async function handleApiIntake(channel, req, res) {
   }
 
   try {
-    const model = typeof incomingBody.model === 'string' && incomingBody.model.trim() ? incomingBody.model.trim() : 'o3';
-
-    const input =
-      typeof incomingBody.instruction === 'string' && incomingBody.instruction.trim()
-        ? incomingBody.instruction.trim()
-        : typeof incomingBody.input === 'string' && incomingBody.input.trim()
-          ? incomingBody.input.trim()
-          : JSON.stringify(incomingBody.payload ?? incomingBody);
-
-    const openaiResponse = await client.responses.create({ model, input });
-
-    await writeCatalogueRecord({
-      id: `cat_openai_${receipt.receiptId}`,
-      agentId: channel,
-      recordType: `api_${channel}_openai_result`,
-      title: `OpenAI result: ${receipt.receiptId}`,
-      body: { receiptId: receipt.receiptId, channel, model, output_text: openaiResponse.output_text, privateSourceExposed: false },
+    const queued = await queueAnyLiveWorkerJob({
+      channel,
+      source: `${channel}-machine-intake`,
+      route: 'machine-intake-to-any-live-worker',
+      externalId: receipt.receiptId,
+      payload: { ...incomingBody, receiptId: receipt.receiptId, privateSourceExposed: false },
+      receiptId: receipt.receiptId,
       units: Number(incomingBody.units || 0)
     });
 
-    return res.status(200).json({
+    await writeCatalogueRecord({
+      id: `cat_queued_${receipt.receiptId}`,
+      agentId: channel,
+      recordType: `api_${channel}_queued`,
+      title: `Worker job queued: ${queued.jobId}`,
+      body: { receiptId: receipt.receiptId, channel, queued, privateSourceExposed: false },
+      units: Number(incomingBody.units || 0)
+    });
+
+    return res.status(202).json({
       ok: true,
       channel,
-      status: 'completed',
-      route: 'direct-openai-fallback',
+      status: 'queued',
+      route: 'worker-queue-fallback',
       receiptId: receipt.receiptId,
-      output: openaiResponse.output_text,
+      jobId: queued.jobId,
+      packetId: queued.packetId,
+      target_worker: queued.target_worker,
+      dispatchMode: queued.dispatchMode,
       privateSourceExposed: false
     });
   } catch (error) {
-    console.error(`Direct OpenAI fallback failed for ${channel}:`, error);
-    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_openai_failed', privateSourceExposed: false });
+    console.error(`Worker queue fallback failed for ${channel}:`, error);
+    return res.status(500).json({ ok: false, channel, error: 'internal_worker_and_queue_failed', privateSourceExposed: false });
   }
 }
 
