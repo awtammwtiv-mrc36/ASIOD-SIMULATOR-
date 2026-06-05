@@ -43,7 +43,7 @@ const pool = RAW_DATABASE_URL
       ssl: RAW_DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
       application_name: process.env.PGAPPNAME || 'asiod-main-app',
       max: 2,
-      idleTimeoutMillis: 150000,
+      idleTimeoutMillis: 3000000,
       connectionTimeoutMillis: 5000
     })
   : null;
