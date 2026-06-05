@@ -43,7 +43,7 @@ const pool = RAW_DATABASE_URL
       ssl: RAW_DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
       application_name: process.env.PGAPPNAME || 'asiod-main-app',
       max: 2,
-      idleTimeoutMillis: 600000,
+      idleTimeoutMillis: 150000,
       connectionTimeoutMillis: 5000
     })
   : null;
@@ -1495,7 +1495,7 @@ const lastPollMs = workerPollThrottle.get(workerId) || 0;
 
   if (Number.isFinite(minPollMs) && minPollMs > 0 && nowMs - lastPollMs < minPollMs) {
     const retryAfterMs = minPollMs - (nowMs - lastPollMs);
-    return res.status(404).json({
+    return res.status(204).json({
       ok: false,
       error: 'poll-too-fast',
       workerId,
