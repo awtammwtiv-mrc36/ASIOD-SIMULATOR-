@@ -654,7 +654,7 @@ function hostGate(req, res, next) {
   if (isAllowedHost(host)) return next();
   if (host === RENDER_DEFAULT_HOST) {
     if (['/health', '/api/health', '/.well-known/agent-card.json', '/.well-known/true-ai.json', '/geometry', '/geometry/health', '/stripe/webhook'].includes(reqPath)) return next();
-    return res.status(410).send('Gone');
+    return res.status(301).send('Gone');
   }
   return res.status(403).end();
 }
